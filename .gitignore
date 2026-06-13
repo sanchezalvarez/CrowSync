@@ -24,6 +24,17 @@ dist-ssr
 *.sln
 *.sw?
 
+# OS junk (Windows / macOS)
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Build caches
+*.tsbuildinfo
+.vite/
+.eslintcache
+
 # Python
 __pycache__/
 *.py[cod]
