@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  crowsync:
+    build: .
+    container_name: crowsync-server
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - crowsync-data:/data
+    environment:
+      - CROWSYNC_PORT=8001
+      - CROWSYNC_STORAGE_ROOT=/data/storage
+      - CROWSYNC_DB_PATH=/data/crowsync.db
+      - CROWSYNC_LOG_LEVEL=INFO
+      # Required to register members after the first. Set it in a sibling .env
+      # (compose substitutes ${...} from there) or the host environment.
+      - CROWSYNC_ADMIN_TOKEN=${CROWSYNC_ADMIN_TOKEN:-}
+volumes:
+  crowsync-data:
+    driver: local

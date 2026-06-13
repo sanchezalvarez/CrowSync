@@ -1,0 +1,32 @@
+# CrowSync ignore patterns (like .gitignore)
+# Place this file as .crowsyncignore in your project root
+
+# Unity
+Library/
+Temp/
+Logs/
+obj/
+*.csproj
+*.sln
+
+# Godot
+.godot/
+export/
+*.import
+
+# Unreal
+Binaries/
+Build/
+Saved/
+Intermediate/
+DerivedDataCache/
+
+# General
+*.tmp
+*.temp
+*.log
+*.bak
+.DS_Store
+Thumbs.db
+node_modules/
+__pycache__/

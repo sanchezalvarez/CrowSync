@@ -1,0 +1,277 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surface layers — light Risograph (warm cream → paper white).
+     Higher index = lighter/more raised, so existing hover:bg-surface-N
+     semantics (hover → lighter) still read correctly. */
+  --color-surface-0: #EAE3D4;  /* base canvas — warm cream */
+  --color-surface-1: #F1EBDF;  /* sidebars / topbar */
+  --color-surface-2: #F7F2EA;  /* cards / modals */
+  --color-surface-3: #FCF9F3;  /* raised / hover */
+  --color-surface-4: #DAD1C0;  /* strong hover / scrollbar thumb */
+
+  /* Text — warm near-black ink scale */
+  --color-text-primary: #1B1813;
+  --color-text-secondary: #57514A;
+  --color-text-muted: #8C857A;
+  --color-text-ghost: #B3AB9C;
+
+  /* Accent — bold Risograph inks, tuned for contrast on cream */
+  --color-accent: #E0480E;
+  --color-accent-hover: #C23D0B;
+  --color-accent-muted: #E0480E1A;
+  --color-sync: #0AA386;
+  --color-sync-muted: #0AA3861F;
+  --color-pull: #3D6FD6;
+  --color-pull-muted: #3D6FD61F;
+  --color-danger: #DC2626;
+  --color-danger-muted: #DC26261F;
+  --color-locked: #C97A0A;
+  --color-locked-muted: #C97A0A1F;
+
+  /* Border */
+  --color-border: #DDD5C6;       /* subtle warm divider */
+  --color-border-active: #1B1813; /* bold near-black riso border */
+
+  /* Fonts */
+  --font-family-sans: 'DM Sans', system-ui, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+
+  /* ── Risograph design tokens ─────────────────────────────────────
+     Light cream base: the classic riso look is a bold near-black
+     offset shadow ("misregistration") on a colored/cream fill. Some
+     small accents keep colored offsets for variety.                 */
+
+  /* Riso offset shadows — accent color offset for misregistration feel */
+  --shadow-riso-sm:  2px 2px 0px var(--color-accent);
+  --shadow-riso-md:  4px 4px 0px var(--color-accent);
+  --shadow-riso-lg:  6px 6px 0px var(--color-accent);
+
+  /* Riso offset shadows — teal variant (for sync/success contexts) */
+  --shadow-riso-sm-teal: 2px 2px 0px var(--color-sync);
+  --shadow-riso-md-teal: 4px 4px 0px var(--color-sync);
+
+  /* Riso offset shadow — neutral ink variant (for dialogs/cards) */
+  --shadow-riso-md-dark: 4px 4px 0px var(--color-border-active);
+  --shadow-riso-lg-dark: 6px 6px 0px var(--color-border-active);
+
+  /* Riso bold border */
+  --border-riso: 1.5px solid var(--color-border-active);
+
+  /* Button press offset — bold ink offset on light */
+  --btn-shadow-rest:   3px 3px 0px var(--color-border-active);
+  --btn-shadow-hover:  2px 2px 0px var(--color-border-active);
+  --btn-shadow-active: 0px 0px 0px var(--color-border-active);
+}
+
+/* Base */
+/* Root font-size drives every rem-based size (Tailwind spacing, widths, named
+   text) so a single bump makes the whole UI breathe. `h-screen` uses vh, not
+   rem, so the app shell still fits the window — only inner density grows. */
+html {
+  font-size: 17px;
+}
+
+body {
+  font-family: var(--font-family-sans);
+  background: var(--color-surface-0);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle scanline texture */
+.scanlines::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.5;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(27,24,19,0.025) 2px,
+    rgba(27,24,19,0.025) 4px
+  );
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-surface-4); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Selection */
+::selection {
+  background: var(--color-accent);
+  color: #FFFFFF;
+}
+
+/* Focus */
+*:focus-visible {
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Glow utility */
+.glow-sync { box-shadow: 0 0 8px var(--color-sync), 0 0 2px var(--color-sync); }
+.glow-accent { box-shadow: 0 0 8px var(--color-accent), 0 0 2px var(--color-accent); }
+.glow-danger { box-shadow: 0 0 8px var(--color-danger), 0 0 2px var(--color-danger); }
+
+/* ── Risograph button — press-in tactile effect ──────────────────
+   Primary variant: accent fill + offset shadow simulating a raised
+   inked stamp. On hover the shadow shrinks + button translates to
+   simulate pressing in. On active it bottoms out.                 */
+.btn-riso {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  border: 1.5px solid var(--color-border-active);
+  box-shadow: var(--btn-shadow-rest);
+  transition: box-shadow 0.1s ease, transform 0.1s ease, background-color 0.1s ease, opacity 0.1s ease;
+  cursor: pointer;
+  position: relative;
+}
+.btn-riso:hover:not(:disabled) {
+  box-shadow: var(--btn-shadow-hover);
+  transform: translate(1px, 1px);
+}
+.btn-riso:active:not(:disabled) {
+  box-shadow: var(--btn-shadow-active);
+  transform: translate(3px, 3px);
+}
+.btn-riso:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Primary (accent fill) */
+.btn-riso-primary {
+  background-color: var(--color-accent);
+  color: var(--color-surface-0);
+}
+.btn-riso-primary:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+
+/* Secondary (surface fill) */
+.btn-riso-secondary {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-secondary);
+  box-shadow: 3px 3px 0px var(--color-border-active);
+  --btn-shadow-hover: 2px 2px 0px var(--color-border-active);
+  --btn-shadow-active: 0px 0px 0px var(--color-border-active);
+}
+.btn-riso-secondary:hover:not(:disabled) {
+  background-color: var(--color-surface-4);
+  box-shadow: var(--btn-shadow-hover);
+}
+.btn-riso-secondary:active:not(:disabled) {
+  box-shadow: var(--btn-shadow-active);
+}
+
+/* Danger ghost */
+.btn-riso-danger {
+  background-color: transparent;
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  box-shadow: 3px 3px 0px var(--color-danger);
+  --btn-shadow-hover: 2px 2px 0px var(--color-danger);
+  --btn-shadow-active: 0px 0px 0px var(--color-danger);
+}
+.btn-riso-danger:hover:not(:disabled) {
+  background-color: var(--color-danger-muted);
+  box-shadow: var(--btn-shadow-hover);
+}
+.btn-riso-danger:active:not(:disabled) {
+  box-shadow: var(--btn-shadow-active);
+}
+
+/* ── Risograph card / panel surface ─────────────────────────────── */
+.card-riso {
+  border: 1.5px solid var(--color-border-active);
+  box-shadow: var(--shadow-riso-md-dark);
+  background-color: var(--color-surface-2);
+}
+
+/* ── Risograph input ─────────────────────────────────────────────── */
+.input-riso {
+  background-color: var(--color-surface-1);
+  border: 1.5px solid var(--color-border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input-riso:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 2px 2px 0px var(--color-accent);
+}
+
+/* ── Entrance animations ─────────────────────────────────────────── */
+@keyframes risoFadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes risoScaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes risoSlideRight {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Toast animation */
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes risoPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-riso-fade-up   { animation: risoFadeUp 0.25s ease both; }
+.animate-riso-scale-in  { animation: risoScaleIn 0.2s ease both; }
+.animate-riso-slide-right { animation: risoSlideRight 0.2s ease both; }
+.animate-riso-pulse     { animation: risoPulse 1.4s ease-in-out infinite; }
+
+/* Log entry stagger — parent assigns --i for delay */
+.log-entry { animation: risoFadeUp 0.2s ease both; }
+
+/* Halftone dot accent — decorative header motif */
+.halftone-accent {
+  background-image: radial-gradient(circle, var(--color-accent) 1px, transparent 1px);
+  background-size: 6px 6px;
+  opacity: 0.08;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-riso-fade-up,
+  .animate-riso-scale-in,
+  .animate-riso-slide-right,
+  .animate-riso-pulse,
+  .log-entry {
+    animation: none !important;
+  }
+  .btn-riso {
+    transition: background-color 0.1s ease, opacity 0.1s ease;
+  }
+  .btn-riso:hover:not(:disabled),
+  .btn-riso:active:not(:disabled) {
+    transform: none;
+  }
+  .input-riso:focus {
+    box-shadow: none;
+  }
+}

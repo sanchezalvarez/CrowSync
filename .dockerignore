@@ -1,0 +1,33 @@
+node_modules
+dist
+dist-ssr
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Frontend / Tauri are not part of the backend image
+src
+src-tauri
+public
+index.html
+package*.json
+tsconfig*.json
+vite.config.ts
+eslint.config.js
+
+# Local data
+crowsync.db
+*.db*
+storage/
+__pycache__
+*.pyc
+
+# Env
+.env
+.env.local
+
+# Plans / docs (image doesn't need them)
+CLAUDE.md
+README.md

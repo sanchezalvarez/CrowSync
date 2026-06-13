@@ -1,0 +1,28 @@
+# CrowSync — TLS reverse proxy (Caddy).
+#
+# Why: API keys travel in the `X-Api-Key` header and WebSocket auth message. Over
+# plain HTTP they cross the network in cleartext. Terminate TLS here so the link
+# from each member's desktop app to the server is encrypted (AUDIT.md S3).
+#
+# Caddy fetches + renews a Let's Encrypt certificate automatically as long as the
+# domain's DNS points at this host and ports 80/443 are reachable.
+#
+# Usage:
+#   1. Replace crowsync.example.com with your domain.
+#   2. Point the desktop app's Server URL at https://crowsync.example.com (no :8001).
+#   3. Run alongside the backend — see docker-compose.tls.yml.
+#
+# Local testing without a public domain: replace the site address with
+# `localhost` (Caddy issues a local self-signed cert into its trust store).
+
+crowsync.example.com {
+	# WebSocket upgrades are proxied transparently by reverse_proxy.
+	reverse_proxy crowsync:8001
+
+	# Generous limits — game assets are large and uploads stream in chunks.
+	request_body {
+		max_size 50GB
+	}
+
+	encode gzip
+}
