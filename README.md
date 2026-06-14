@@ -54,6 +54,27 @@ manual upload/download, history and activity still work).
 npm run tauri dev
 ```
 
+## Running the server (Windows / macOS / Linux)
+
+The server is pure Python — no compiled dependencies — so it runs natively on
+**all three OSes**, not just Linux. Pick whichever fits:
+
+- **Docker** (Linux, or Docker Desktop on Windows/macOS) — `docker-compose up -d`.
+  Most reproducible; same image everywhere.
+- **Helper script** (creates a venv, installs deps, starts the server):
+  ```bash
+  ./scripts/run-server.sh      # macOS / Linux
+  scripts\run-server.bat       # Windows
+  ```
+- **Plain Python** (Python 3.11+):
+  ```bash
+  pip install -r server/requirements.txt
+  python -m server.main
+  ```
+- **Standalone binary** — download `crowsync-server-<os>-x64` from a GitHub
+  Release (built by the release workflow); no Python install needed. Run it
+  directly; it honours the same `CROWSYNC_*` env vars below.
+
 ## Configuration (server env vars)
 
 | Variable | Default | Purpose |

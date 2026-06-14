@@ -1,0 +1,154 @@
+name: Release
+
+# Build user-facing artifacts for a tagged version:
+#   - desktop installers for Windows, macOS and Linux (Tauri)
+#   - standalone server binaries for Windows, macOS and Linux (PyInstaller)
+#   - the server Docker image (built only, exported as a tarball — not published)
+# Everything is attached to a DRAFT GitHub Release; nothing is deployed. Review
+# and test the artifacts, then publish the release manually.
+#
+# Trigger by pushing a tag like `v0.1.0` (the /build-release command does this),
+# or run manually from the Actions tab.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # create/upload to the draft release
+
+jobs:
+  desktop:
+    name: Desktop installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Set up Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            build-essential \
+            libssl-dev
+
+      - name: Build and bundle the desktop app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Code signing (unsigned for now; add secrets + uncomment to enable) ---
+          # macOS notarization:
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows code signing:
+          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "CrowSync ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+
+  server-binary:
+    name: Server binary (${{ matrix.os }})
+    # Run after the desktop job so the draft release already exists (created by
+    # tauri-action); these jobs then just append their assets to the same tag,
+    # avoiding a race where two jobs create duplicate drafts.
+    needs: desktop
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: crowsync-server-macos-x64
+          - os: windows-latest
+            asset: crowsync-server-windows-x64.exe
+          - os: ubuntu-latest
+            asset: crowsync-server-linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r server/requirements.txt pyinstaller
+
+      - name: Build standalone server binary
+        run: pyinstaller packaging/crowsync-server.spec
+
+      - name: Rename binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: mv dist/crowsync-server "dist/${{ matrix.asset }}"
+
+      - name: Rename binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Rename-Item dist/crowsync-server.exe "${{ matrix.asset }}"
+
+      - name: Upload to draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "CrowSync ${{ github.ref_name }}"
+          draft: true
+          files: dist/${{ matrix.asset }}
+
+  server-docker:
+    name: Server Docker image (build only)
+    needs: desktop # upload to the draft release tauri-action created
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build the image to prove the Dockerfile works, then export it as a
+      # loadable tarball. Not pushed to any registry — deployment is handled
+      # separately. Load later with: docker load < crowsync-server-<tag>.tar.gz
+      - name: Build image
+        run: docker build -t crowsync-server:${{ github.ref_name }} .
+
+      - name: Export image tarball
+        run: docker save crowsync-server:${{ github.ref_name }} | gzip > "crowsync-server-${{ github.ref_name }}.tar.gz"
+
+      - name: Upload to draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "CrowSync ${{ github.ref_name }}"
+          draft: true
+          files: crowsync-server-${{ github.ref_name }}.tar.gz

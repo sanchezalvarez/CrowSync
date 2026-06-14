@@ -42,6 +42,9 @@ __pycache__/
 .venv/
 venv/
 
+# PyInstaller (standalone server binary build outputs)
+/build/
+
 # CrowSync runtime data
 crowsync.db
 *.db
