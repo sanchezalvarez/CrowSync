@@ -341,6 +341,18 @@ async fn read_chunk(file: &mut tokio::fs::File, buf: &mut [u8]) -> std::io::Resu
     Ok(filled)
 }
 
+/// Delete a local file (used when a remote delete is pulled — the leftover local
+/// copy must go, else it re-pushes as a "new" file). Missing file is not an error
+/// (returns false); the caller still clears the sync base.
+#[tauri::command]
+pub async fn delete_local(abs_path: String) -> Result<bool, String> {
+    match tokio::fs::remove_file(&abs_path).await {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("delete {abs_path}: {e}")),
+    }
+}
+
 #[tauri::command]
 pub async fn download_file(
     server_url: String,

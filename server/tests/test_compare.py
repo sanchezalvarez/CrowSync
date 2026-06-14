@@ -18,10 +18,10 @@ def _upload(client, pid, path, content, headers):
     )
 
 
-def _compare(client, pid, entries, headers):
+def _compare(client, pid, entries, headers, tombstones=None):
     return client.post(
         f"/projects/{pid}/compare",
-        json={"files": entries},
+        json={"files": entries, "tombstones": tombstones or []},
         headers=headers,
     )
 
@@ -160,6 +160,76 @@ def test_compare_unity_project_detected(app_client, member, project):
     )
     assert r.status_code == 200
     assert r.json()["unity"]["is_unity"] is True
+
+
+# ── Delete propagation (D1) ───────────────────────────────────────────────────
+
+def test_compare_tombstone_unchanged_server_is_deleted_local(app_client, member, project):
+    """Client deleted a file it had synced; server still has it unchanged → the
+    delete should propagate to the server (deleted_local)."""
+    pid = project["id"]
+    content = b"to be deleted"
+    _upload(app_client, pid, "Assets/gone.fbx", content, member["headers"])
+    r = _compare(
+        app_client, pid, [], member["headers"],
+        tombstones=[{"path": "Assets/gone.fbx", "base_version": 1, "base_checksum": _md5(content)}],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"]["deleted_local"] == 1
+    assert body["deleted_local"][0]["path"] == "Assets/gone.fbx"
+    # Must NOT also show up as new_remote.
+    assert body["summary"]["new_remote"] == 0
+
+
+def test_compare_tombstone_changed_server_is_conflict(app_client, member, project):
+    """Client deleted a file but the server moved it meanwhile → delete-vs-edit
+    conflict, not a silent delete."""
+    pid = project["id"]
+    _upload(app_client, pid, "Assets/edited.fbx", b"v1", member["headers"])
+    _upload(app_client, pid, "Assets/edited.fbx", b"v2", member["headers"])  # server now v2
+    r = _compare(
+        app_client, pid, [], member["headers"],
+        tombstones=[{"path": "Assets/edited.fbx", "base_version": 1, "base_checksum": _md5(b"v1")}],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"]["conflict"] == 1
+    assert body["summary"]["deleted_local"] == 0
+
+
+def test_compare_server_deleted_local_unchanged_is_deleted_remote(app_client, member, project):
+    """File is on the client with a recorded base + unchanged content, but the server
+    no longer has it → the server deleted it; remove the local leftover (deleted_remote)."""
+    pid = project["id"]
+    content = b"orphan"
+    r = _compare(
+        app_client, pid,
+        [{"path": "Assets/orphan.fbx", "checksum": _md5(content), "size_bytes": len(content),
+          "base_version": 3, "base_checksum": _md5(content)}],
+        member["headers"],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"]["deleted_remote"] == 1
+    assert body["deleted_remote"][0]["path"] == "Assets/orphan.fbx"
+    assert body["summary"]["new_local"] == 0
+
+
+def test_compare_server_absent_but_local_modified_is_new_local(app_client, member, project):
+    """Same as above but the client's content changed since the base → the user has
+    new work; re-add it (new_local), don't destroy it as a delete."""
+    pid = project["id"]
+    r = _compare(
+        app_client, pid,
+        [{"path": "Assets/orphan.fbx", "checksum": _md5(b"new content"), "size_bytes": 11,
+          "base_version": 3, "base_checksum": _md5(b"old content")}],
+        member["headers"],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"]["new_local"] == 1
+    assert body["summary"]["deleted_remote"] == 0
 
 
 def test_compare_path_traversal_rejected(app_client, member, project):

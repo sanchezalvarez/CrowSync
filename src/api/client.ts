@@ -1,4 +1,4 @@
-import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareResult, ServerSettings, LockResult, LockSuggestionResult } from '../types'
+import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult } from '../types'
 
 export class CrowSyncClient {
   private baseUrl: string
@@ -62,15 +62,15 @@ export class CrowSyncClient {
     return this.request('/projects')
   }
 
-  async createProject(name: string, description = '', color = '#E04E0E', rootPath = ''): Promise<Project> {
+  async createProject(name: string, description = '', color = '#E04E0E'): Promise<Project> {
     return this.request('/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, color, root_path: rootPath }),
+      body: JSON.stringify({ name, description, color }),
     })
   }
 
-  async updateProject(projectId: number, updates: Partial<Pick<Project, 'name' | 'description' | 'color' | 'root_path'>>): Promise<Project> {
+  async updateProject(projectId: number, updates: Partial<Pick<Project, 'name' | 'description' | 'color'>>): Promise<Project> {
     return this.request(`/projects/${projectId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -211,11 +211,15 @@ export class CrowSyncClient {
   // Compare — client posts a manifest of its local folder (each entry carries the
   // client's sync base) and the server diffs against the DB. Push/pull are
   // orchestrated client-side (see useFileWatch) via per-file upload/download.
-  async compareProject(projectId: number, manifest: CompareManifestEntry[]): Promise<CompareResult> {
+  async compareProject(
+    projectId: number,
+    manifest: CompareManifestEntry[],
+    tombstones: CompareTombstone[] = [],
+  ): Promise<CompareResult> {
     return this.request(`/projects/${projectId}/compare`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: manifest }),
+      body: JSON.stringify({ files: manifest, tombstones }),
     })
   }
 

@@ -465,24 +465,8 @@ def get_stale_upload_sessions(hours: int) -> list[dict]:
 
 
 # ── Versions ─────────────────────────────────────────────────────────
-
-def create_version(
-    file_id: int, version: int, size_bytes: int,
-    checksum: str, author_id: int, message: str, storage_filename: str,
-) -> dict:
-    with _write_lock:
-        conn = _get_conn()
-        cur = conn.execute(
-            """INSERT INTO versions (file_id, version, size_bytes, checksum, author_id, message, storage_filename)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (file_id, version, size_bytes, checksum, author_id, message, storage_filename),
-        )
-        version_id = cur.lastrowid
-        conn.commit()
-        row = conn.execute("SELECT * FROM versions WHERE id = ?", (version_id,)).fetchone()
-        conn.close()
-        return _row_to_dict(row)
-
+# Version rows are inserted atomically inside commit_new_version (with the
+# files.current_version bump under one transaction); there's no standalone insert.
 
 def get_version(file_id: int, version: int) -> dict | None:
     conn = _get_conn()

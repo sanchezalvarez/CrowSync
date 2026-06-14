@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { CompareResult, CompareManifestEntry, SyncResult } from '../types'
+import type { CompareResult, CompareManifestEntry, CompareTombstone, SyncResult } from '../types'
 import type { CrowSyncClient } from '../api/client'
 import { getLocalPath, joinLocal } from '../utils/localPath'
-import { getSyncState, setSyncBase } from '../utils/syncState'
+import { getSyncState, setSyncBase, removeSyncBase } from '../utils/syncState'
 import { newUploadId, getPendingUpload, setPendingUpload, clearPendingUpload } from '../utils/uploadState'
-import { isNativeAvailable, scanDir, nativeUpload, nativeDownload, detectUnity } from '../utils/nativeFs'
+import { isNativeAvailable, scanDir, nativeUpload, nativeDownload, nativeDeleteLocal, detectUnity } from '../utils/nativeFs'
 
 const POLL_INTERVAL = 5000 // 5 seconds
 
@@ -84,7 +84,13 @@ export function useFileWatch(
         base_version: base[f.path]?.version ?? 0,
         base_checksum: base[f.path]?.checksum ?? '',
       }))
-      const result = await client.compareProject(projectId, manifest)
+      // Tombstones: paths we have a base for but no longer scanned → locally deleted.
+      // Lets the server propagate the delete instead of resurrecting the file (D1).
+      const scannedPaths = new Set(scanned.map(f => f.path))
+      const tombstones: CompareTombstone[] = Object.entries(base)
+        .filter(([p]) => !scannedPaths.has(p))
+        .map(([p, b]) => ({ path: p, base_version: b.version, base_checksum: b.checksum }))
+      const result = await client.compareProject(projectId, manifest, tombstones)
       setComparison(result)
       setLastScan(new Date())
     } catch {
@@ -168,6 +174,17 @@ export function useFileWatch(
           errors.push({ path: item.path, error: e.message || String(e) })
         }
       }
+      // Propagate local deletes to the server (file we had synced, now gone locally,
+      // server still has it unchanged) so it doesn't reappear on the next pull (D1).
+      for (const d of comparison.deleted_local) {
+        try {
+          await client.deleteFile(projectId, d.path)
+          removeSyncBase(projectId, d.path)
+          done++
+        } catch (e) {
+          errors.push({ path: d.path, error: e instanceof Error ? e.message : String(e) })
+        }
+      }
       await compare()
       return { done, errors }
     } finally {
@@ -202,19 +219,32 @@ export function useFileWatch(
           errors.push({ path: f.path, error: e.message || String(e) })
         }
       }
+      // Apply remote deletes locally (server dropped a file we still have unchanged)
+      // so our leftover copy doesn't re-push as new_local (D1). Native-only.
+      if (native) {
+        for (const d of comparison.deleted_remote) {
+          try {
+            await nativeDeleteLocal(joinLocal(localPath, d.path))
+            removeSyncBase(projectId, d.path)
+            done++
+          } catch (e) {
+            errors.push({ path: d.path, error: e instanceof Error ? e.message : String(e) })
+          }
+        }
+      }
       await compare()
       return { done, errors }
     } finally {
       setLoading(false)
     }
-  }, [client, projectId, comparison, serverUrl, memberName, apiKey, compare])
+  }, [client, projectId, comparison, serverUrl, memberName, apiKey, native, compare])
 
   const hasLocalChanges = comparison
-    ? (comparison.summary.new_local > 0 || comparison.summary.modified_local > 0)
+    ? (comparison.summary.new_local > 0 || comparison.summary.modified_local > 0 || comparison.summary.deleted_local > 0)
     : false
 
   const hasRemoteChanges = comparison
-    ? (comparison.summary.new_remote > 0 || comparison.summary.behind > 0)
+    ? (comparison.summary.new_remote > 0 || comparison.summary.behind > 0 || comparison.summary.deleted_remote > 0)
     : false
 
   return {

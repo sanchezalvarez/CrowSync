@@ -82,3 +82,11 @@ export async function nativeDownload(args: DownloadArgs): Promise<TransferOutcom
   if (!invoke) throw new Error('Native download unavailable (browser mode)')
   return invoke('download_file', { ...args })
 }
+
+/** Delete a local file (pulled remote delete). Returns false if it was already gone.
+ * Throws in browser mode (no native access) — callers guard with isNativeAvailable. */
+export async function nativeDeleteLocal(absPath: string): Promise<boolean> {
+  const invoke = await getInvoke()
+  if (!invoke) throw new Error('Native delete unavailable (browser mode)')
+  return invoke<boolean>('delete_local', { absPath })
+}

@@ -24,6 +24,8 @@ function App() {
   const [setupError, setSetupError] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [formStorageRoot, setFormStorageRoot] = useState('')
+  const [formAutoUnlock, setFormAutoUnlock] = useState('')
+  const [formMaxFileSize, setFormMaxFileSize] = useState('')
   const [ignoreRules, setIgnoreRules] = useState<string[]>([])
   const [unityRules, setUnityRules] = useState<string[]>([])
 
@@ -51,6 +53,8 @@ function App() {
     if (showSettings && client) {
       client.getSettings().then(s => {
         setFormStorageRoot(s.storage_root)
+        setFormAutoUnlock(s.auto_unlock_hours)
+        setFormMaxFileSize(s.max_file_size_mb)
       }).catch(() => {})
       client.getIgnorePatterns().then(setIgnoreRules).catch(() => {})
       client.getUnityIgnorePatterns().then(setUnityRules).catch(() => {})
@@ -130,10 +134,12 @@ function App() {
     try {
       await client.updateSettings({
         storage_root: formStorageRoot,
+        auto_unlock_hours: formAutoUnlock,
+        max_file_size_mb: formMaxFileSize,
       })
     } catch { /* ignore */ }
     setShowSettings(false)
-  }, [client, formStorageRoot])
+  }, [client, formStorageRoot, formAutoUnlock, formMaxFileSize])
 
   // ── Setup ─────────────────────────────────────────────────────────
   if (showSetup) {
@@ -259,6 +265,27 @@ function App() {
                 </button>
               </div>
               <p className="text-[12px] text-text-ghost mt-1">Where server stores versioned files</p>
+            </div>
+
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Auto-unlock (h)</label>
+                <input type="number" min="1" value={formAutoUnlock}
+                  onChange={e => setFormAutoUnlock(e.target.value)}
+                  placeholder="24"
+                  className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
+                />
+                <p className="text-[12px] text-text-ghost mt-1">Release stale locks after</p>
+              </div>
+              <div className="flex-1">
+                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Max file (MB)</label>
+                <input type="number" min="1" value={formMaxFileSize}
+                  onChange={e => setFormMaxFileSize(e.target.value)}
+                  placeholder="2048"
+                  className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
+                />
+                <p className="text-[12px] text-text-ghost mt-1">Upload size limit</p>
+              </div>
             </div>
 
             {/* Ignore rules (read-only) */}

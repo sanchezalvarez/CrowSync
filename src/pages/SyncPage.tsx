@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { FileEntry, Activity } from '../types'
 import type { CrowSyncClient } from '../api/client'
 import { setSyncBase, removeSyncBase } from '../utils/syncState'
+import { getLocalPath, joinLocal } from '../utils/localPath'
+import { isNativeAvailable, nativeDeleteLocal } from '../utils/nativeFs'
 import { useProjects } from '../hooks/useProjects'
 import { useFiles } from '../hooks/useFiles'
 import { useFileWatch } from '../hooks/useFileWatch'
@@ -181,7 +183,15 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
     if (!confirm(`Delete ${path}? This cannot be undone.${extra}`)) return
     try {
       await deleteFile(path)
-      if (selectedId) removeSyncBase(selectedId, path)
+      if (selectedId) {
+        removeSyncBase(selectedId, path)
+        // Also remove the local copy, else it re-pushes as new_local on the next
+        // sync (single-user resurrection — D1). Best-effort; native-only.
+        const localPath = getLocalPath(selectedId)
+        if (isNativeAvailable() && localPath) {
+          try { await nativeDeleteLocal(joinLocal(localPath, path)) } catch { /* leftover local file, non-fatal */ }
+        }
+      }
     } catch (err: any) { addToast(err.message) }
   }, [deleteFile, files, selectedId])
 

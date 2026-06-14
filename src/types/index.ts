@@ -22,6 +22,14 @@ export interface CompareManifestEntry extends ManifestEntry {
   base_checksum: string
 }
 
+/** A path the client had synced (has a base for) but no longer has on disk —
+ * sent to `/compare` so a local delete propagates instead of resurrecting (D1). */
+export interface CompareTombstone {
+  path: string
+  base_version: number
+  base_checksum: string
+}
+
 export interface Member {
   id: number
   name: string
@@ -129,10 +137,13 @@ export interface CompareResult {
   conflict: CompareChangedEntry[]        // both changed (or no base) → manual resolve
   new_remote: CompareRemoteEntry[]       // server-only → pull
   synced: Array<{ path: string; version: number }>
+  deleted_local: Array<{ path: string }>   // client deleted it, server unchanged → delete on server (push)
+  deleted_remote: Array<{ path: string }>  // server deleted it, local unchanged → delete locally (pull)
   unity?: { is_unity: boolean; warnings: UnityWarning[] }
   summary: {
     new_local: number; modified_local: number; behind: number; conflict: number
-    new_remote: number; synced: number; total_local: number; total_server: number
+    new_remote: number; synced: number; deleted_local: number; deleted_remote: number
+    total_local: number; total_server: number
   }
 }
 

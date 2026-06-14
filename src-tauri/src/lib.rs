@@ -9,6 +9,7 @@ pub fn run() {
       fs_ops::detect_unity,
       fs_ops::upload_file,
       fs_ops::download_file,
+      fs_ops::delete_local,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

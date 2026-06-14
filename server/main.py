@@ -149,19 +149,46 @@ def _rate_limit_members(request: Request) -> None:
     hits.append(now)
 
 
+# WebSocket auth uses the same sliding-window shape so api-key guessing over the WS
+# handshake is throttled like POST /members (M3). Separate bucket, looser cap.
+_WS_RATE_MAX = 20
+_WS_RATE_WINDOW = 60.0
+_ws_auth_hits: dict[str, list[float]] = defaultdict(list)
+
+
+def _rate_limit_ws(ip: str) -> bool:
+    """Record a WS auth attempt; return False if the IP is over the limit."""
+    now = time.monotonic()
+    hits = _ws_auth_hits[ip]
+    cutoff = now - _WS_RATE_WINDOW
+    hits[:] = [t for t in hits if t > cutoff]
+    if len(hits) >= _WS_RATE_MAX:
+        return False
+    hits.append(now)
+    return True
+
+
+def _gc_rate_limit_buckets() -> None:
+    """Drop per-IP buckets with no recent hits so the in-memory maps stay bounded
+    over a long-running process (M2). Called from the hourly auto-unlock loop."""
+    now = time.monotonic()
+    for bucket, window in ((_members_hits, _MEMBERS_RATE_WINDOW), (_ws_auth_hits, _WS_RATE_WINDOW)):
+        cutoff = now - window
+        for ip in [ip for ip, hits in bucket.items() if not any(t > cutoff for t in hits)]:
+            del bucket[ip]
+
+
 # ── Request models ───────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
     name: str
     description: str = ""
     color: str = "#E04E0E"
-    root_path: str = ""  # user-defined project folder path
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     color: str | None = None
-    root_path: str | None = None
 
 class MemberCreate(BaseModel):
     name: str
@@ -194,10 +221,19 @@ class ManifestEntry(BaseModel):
     base_version: int = 0
     base_checksum: str = ""
 
+class Tombstone(BaseModel):
+    """A path the client has a sync base for but is no longer on its disk (locally
+    deleted). Lets compare distinguish "I deleted it" from "I never had it" so the
+    delete can propagate to the server instead of the file resurrecting (D1)."""
+    path: str
+    base_version: int = 0
+    base_checksum: str = ""
+
 class CompareManifest(BaseModel):
     """Client-supplied snapshot of the member's local working folder.
     Replaces the old server-side scan of project.root_path."""
     files: list[ManifestEntry] = []
+    tombstones: list[Tombstone] = []
 
 
 # ── Health ───────────────────────────────────────────────────────────
@@ -223,7 +259,9 @@ async def list_projects(member: dict = Depends(get_current_member)):
 
 @app.post("/projects", status_code=201)
 async def create_project(body: ProjectCreate, member: dict = Depends(get_current_member)):
-    project = storage.create_project(body.name, body.description, body.color, body.root_path)
+    # root_path is a legacy column (the local working folder is client-side now) — pass
+    # empty; the server no longer reads it for sync (N4).
+    project = storage.create_project(body.name, body.description, body.color, "")
     file_manager.get_storage_dir(get_storage_root(), project["id"])
     return project
 
@@ -299,11 +337,20 @@ async def compare_project(
     conflict = []         # both changed (or no base) → manual resolve
     new_remote = []       # on server, not locally → pull candidates
     synced = []           # same checksum
+    deleted_local = []    # client deleted it, server unchanged → delete on server (push)
+    deleted_remote = []   # server deleted it, local unchanged → delete locally (pull)
 
     for path, local in local_map.items():
         server = server_map.get(path)
         if server is None:
-            new_local.append({"path": path, "size_bytes": local["size_bytes"], "checksum": local["checksum"]})
+            # Not on the server. With a recorded base + unchanged content this is a
+            # file the server deleted (our copy is the leftover) → propagate the delete
+            # locally. A changed checksum means the user has new/edited content → re-add
+            # as new_local, don't destroy their work (D1).
+            if local["base_version"] > 0 and local["checksum"] == local["base_checksum"]:
+                deleted_remote.append({"path": path})
+            else:
+                new_local.append({"path": path, "size_bytes": local["size_bytes"], "checksum": local["checksum"]})
             continue
         if local["checksum"] == server["checksum"]:
             synced.append({"path": path, "version": server["current_version"]})
@@ -336,8 +383,30 @@ async def compare_project(
         else:
             modified_local.append(entry)
 
+    # Local deletes: paths the client had a base for but no longer has on disk.
+    # If the server still has the file unchanged since that base → propagate the
+    # delete to the server (deleted_local). If the server moved meanwhile it's a
+    # delete-vs-edit conflict → manual resolve. Already-gone → ignore (D1).
+    tombstone_paths = set()
+    for t in manifest.tombstones:
+        path = normalize_rel_path(t.path)
+        tombstone_paths.add(path)
+        server = server_map.get(path)
+        if server is None:
+            continue
+        if server["current_version"] == t.base_version:
+            deleted_local.append({"path": path})
+        else:
+            conflict.append({
+                "path": path,
+                "local_checksum": "",
+                "local_size": 0,
+                "server_checksum": server["checksum"],
+                "server_version": server["current_version"],
+            })
+
     for path, server in server_map.items():
-        if path not in local_map:
+        if path not in local_map and path not in tombstone_paths:
             new_remote.append({
                 "path": path,
                 "server_version": server["current_version"],
@@ -361,6 +430,8 @@ async def compare_project(
         "conflict": conflict,
         "new_remote": new_remote,
         "synced": synced,
+        "deleted_local": deleted_local,
+        "deleted_remote": deleted_remote,
         "unity": {"is_unity": is_unity, "warnings": unity_warnings},
         "summary": {
             "new_local": len(new_local),
@@ -369,6 +440,8 @@ async def compare_project(
             "conflict": len(conflict),
             "new_remote": len(new_remote),
             "synced": len(synced),
+            "deleted_local": len(deleted_local),
+            "deleted_remote": len(deleted_remote),
             "total_local": len(local_map),
             "total_server": len(server_files),
         }
@@ -1059,7 +1132,9 @@ async def revert_file(
     new_filename = file_manager.make_storage_filename(file_record["id"], new_version_num, original_name)
     dest_dir = file_manager.get_storage_dir(get_storage_root(), project_id)
     new_blob_path = dest_dir / new_filename
-    shutil.copy2(str(src_path), str(new_blob_path))
+    # Off-load the blob copy to a thread — a multi-GB revert must not block the event
+    # loop (M1; mirrors the streaming/to_thread handling on the upload path).
+    await asyncio.to_thread(shutil.copy2, str(src_path), str(new_blob_path))
 
     # Atomic version commit (V2): same path as upload_file — asserts no foreign lock
     # and that current_version still matches, replacing the non-atomic
@@ -1192,6 +1267,10 @@ async def websocket_endpoint(websocket: WebSocket, project_id: int):
     # Auth via the first message instead of the query string, so the API key never
     # lands in access logs / proxy URLs (S2). Expect {"type":"auth","member_name","api_key"}.
     await websocket.accept()
+    ip = websocket.client.host if websocket.client else "unknown"
+    if not _rate_limit_ws(ip):
+        await websocket.close(code=4001, reason="Too many auth attempts")
+        return
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
         msg = json.loads(raw)
@@ -1239,6 +1318,12 @@ async def _auto_unlock_loop():
                 })
         except Exception:
             logger.exception("Auto-unlock loop error")
+
+        # Keep the in-memory rate-limit maps bounded (M2/M3).
+        try:
+            _gc_rate_limit_buckets()
+        except Exception:
+            logger.exception("Rate-limit GC error")
 
         # GC abandoned resumable uploads (partial blob + session row).
         try:

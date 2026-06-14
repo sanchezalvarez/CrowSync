@@ -26,8 +26,15 @@ npm run build      # tsc -b && vite build → dist/
 npm run lint       # eslint .
 npm run type-check # tsc --noEmit (no emit, just type errors)
 npm run tauri dev  # full desktop app (also boots vite via beforeDevCommand)
+npm test           # vitest run (frontend unit tests, src/__tests__/)
 ```
-There is **no test runner configured** — don't claim tests pass; verify changes by running the dev server and exercising the UI.
+
+### Tests
+```bash
+python -m pytest server/ -q   # backend (server/tests/ + test_unity.py, test_lock_groups.py)
+npm test                      # frontend (vitest, src/__tests__/)
+```
+Both suites should stay green. Still verify UI-level behaviour (lock/sync flows) by running the dev server; the suites don't cover the Tauri-native path.
 
 ### Docker (production-style backend)
 ```bash
@@ -46,7 +53,7 @@ Every request needs **two headers**: `X-Member-Name` and `X-Api-Key`. The API ke
 ### Data layer
 - **`server/storage.py`** is the only module that touches SQLite — raw `sqlite3`, no ORM. Every state-changing endpoint goes through it; don't open connections elsewhere. Read-modify-write sequences that must be atomic across concurrent requests (e.g. lock check + flip in `upload_file`) use the `with_transaction()` context manager, which serializes via a process-wide write-lock + `BEGIN IMMEDIATE`.
 - `server/file_manager.py` is the on-disk/blob + path-logic counterpart (scan, ignore patterns, storage filenames). `server/main.py` is routing/HTTP only and delegates to these two.
-- `server/unity.py` holds the Unity-aware helpers (pure path/content functions, no I/O — see "Unity-aware features" below); `server/test_unity.py` covers them (`python -m server.test_unity`).
+- `server/unity.py` holds the Unity-aware helpers (pure path/content functions, no I/O — see "Unity-aware features" below); covered by `server/test_unity.py` and the `server/tests/` pytest suite.
 
 ### Storage layout
 - **DB schema (`server/schema.sql`, applied by `storage.init_db`)**: `projects`, `members`, `files` (current state + lock metadata: `locked_by_id`, `locked_at`, `lock_reason`, `lock_group_id`), `versions` (history), `activity` (audit log), `settings` (key/value), `upload_sessions` (resumable uploads). Files locked together (an asset + its `.meta` + picked deps) share a `lock_group_id`. Unlock takes a `scope` (`"file"` | `"group"`); the UI asks which when you unlock a grouped file. A single-file unlock that leaves one member behind clears that member's `lock_group_id` (no longer a group).
@@ -56,8 +63,8 @@ Every request needs **two headers**: `X-Member-Name` and `X-Api-Key`. The API ke
 ### The sync flow (critical to understand before editing)
 **Distributed / client-side model.** The server is a dumb blob+metadata store and never reads a member's disk. The Tauri client owns the intelligence:
 - **Scan** happens natively in Rust (`src-tauri/src/fs_ops.rs:scan_dir` — walkdir + MD5, mirrors `file_manager.DEFAULT_IGNORE_PATTERNS` via `GET /ignore-patterns`).
-- **`POST /projects/{id}/compare`** takes a client-supplied **manifest** (`{files:[{path,checksum,size_bytes}]}`) and diffs it against the DB — it does *not* scan anything server-side. Returns the same `CompareResult` shape the UI already consumes.
-- **Push/pull are orchestrated on the client** (`src/hooks/useFileWatch.ts`): push loops over `new_local`+`modified_local` calling the native streaming upload (`fs_ops.rs:upload_file` → `POST .../files/upload`); pull loops over `new_remote` calling `fs_ops.rs:download_file` (streams a version straight to disk). Both reuse the member's API key.
+- **`POST /projects/{id}/compare`** takes a client-supplied **manifest** (`{files:[{path,checksum,size_bytes,base_version,base_checksum}],tombstones:[{path,base_version,base_checksum}]}`) and diffs it against the DB — it does *not* scan anything server-side. Each file carries the client's **sync base** (last version+checksum it synced, from `src/utils/syncState.ts`) so a mismatch is attributed to `modified_local` / `behind` / `conflict` (K1). **Tombstones** are paths the client had a base for but no longer has on disk → the server returns them as `deleted_local` (propagate the delete to the server). A server-only file the client still carries a matching base for is returned as `deleted_remote` (delete it locally). Without this, deletes never propagate and files resurrect (D1).
+- **Push/pull are orchestrated on the client** (`src/hooks/useFileWatch.ts`): push loops over `new_local`+`modified_local` calling the native streaming upload (`fs_ops.rs:upload_file`), then deletes `deleted_local` on the server (`DELETE .../files`); pull loops over `new_remote`+`behind` calling `fs_ops.rs:download_file`, then removes `deleted_remote` locally via the native `fs_ops.rs:delete_local`. Each handled path's sync base is updated/cleared. Both reuse the member's API key. A manual UI delete (`SyncPage.handleDelete`) removes both the server record and the local file so it can't re-push as `new_local`.
 - All per-file actions (upload/download/lock/unlock/revert/versions) live under `/projects/{id}/files/...`.
 - **Browser dev mode has no Tauri** → native scan/transfer are unavailable, `useFileWatch` stays idle (`native:false`) and the UI degrades to read-only (lock/download/activity still work).
 
@@ -90,14 +97,16 @@ For Unity projects (`Assets/` + `ProjectSettings/`), CrowSync adds locking/ignor
 Tailwind v4 with a custom theme in `src/index.css` (`@theme` block). Use the named tokens (`bg-surface-1`, `text-text-muted`, `text-accent`, `text-sync`, `text-danger`, `text-locked`, `font-mono`, `scanlines`) instead of raw colors so the dark-industrial look stays consistent.
 
 ### Tauri
-The Rust side (`src-tauri/src/lib.rs`) registers `tauri-plugin-dialog` (path picking, via `src/utils/folderPicker.ts`) plus three custom commands in `src-tauri/src/fs_ops.rs` that power client-side sync: `scan_dir` (walkdir + MD5 manifest), `upload_file` / `download_file` (streaming transfers via `reqwest`, chunked so multi-GB assets don't sit in RAM). Custom commands need no capability entry; the `fs:*` scope in `tauri.conf.json` only matters if `tauri-plugin-fs` is used directly. Frontend assumes Tauri APIs may be absent (browser dev mode) — keep that fallback when adding native calls.
+The Rust side (`src-tauri/src/lib.rs`) registers `tauri-plugin-dialog` (path picking, via `src/utils/folderPicker.ts`) plus custom commands in `src-tauri/src/fs_ops.rs` that power client-side sync: `scan_dir` (walkdir + MD5 manifest), `detect_unity`, `upload_file` / `download_file` (streaming transfers via `reqwest`, chunked so multi-GB assets don't sit in RAM), and `delete_local` (remove a pulled-delete's leftover local file). Custom commands need no capability entry; the `fs:*` scope in `tauri.conf.json` only matters if `tauri-plugin-fs` is used directly. Frontend assumes Tauri APIs may be absent (browser dev mode) — keep that fallback when adding native calls.
 
 ## Known issues (see AUDIT.md for details)
 
-Full audit lives in `AUDIT.md`. As of **2026-06-13** the audit's findings are resolved:
+Full audit lives in `AUDIT.md` (latest pass **2026-06-14**). Resolved in this pass:
 
-- **K1** (client-side sync base), **V1–V4** (auto-unlock time format, atomic+lock-checked revert, setup admin-token UI, compose `CROWSYNC_ADMIN_TOKEN`), **N1–N8** — fixed 2026-06-12.
-- **Resumable upload**, **S1** (admin-gated destructive endpoints), **S2a** (API-key hashing), **S2b** (WS auth out of the query string), **rate-limit on `/members`** — done 2026-06-13.
+- **D1** — delete propagation: compare now takes `tombstones` and returns `deleted_local`/`deleted_remote`; push/pull and manual delete apply them (native `delete_local`), so deletes no longer resurrect.
+- **M1** (revert blob copy off the event loop via `asyncio.to_thread`), **M2/M3** (rate-limit dicts GC'd hourly; WS auth rate-limited via `_rate_limit_ws`).
+- **N1** (this doc), **N2** (dead `create_version` removed), **N3** (`auto_unlock_hours`/`max_file_size_mb` editable in Settings UI), **N4** (legacy `root_path` dropped from the wire; column kept), **N5** (CrowForge `.claude/` remnants removed).
+- Earlier passes resolved **K1**, **V1–V4**, **S1/S2a/S2b**, resumable upload, `/members` rate-limit, and the original **N1–N8**.
 
 Remaining / operational:
 - **TLS (S3)** is deployment-level, not code — run behind the included Caddy reverse proxy (`Caddyfile` + `docker-compose.tls.yml`) before exposing the server to the internet. Keys travel in headers/WS message, so TLS is mandatory in production.
