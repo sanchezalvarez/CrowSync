@@ -181,7 +181,8 @@ export function FileDetail({
         </button>
         <button
           onClick={() => withLoading('lock', async () => {
-            file.locked_by_id ? await onUnlock(file.path) : await onLock(file.path)
+            if (file.locked_by_id) await onUnlock(file.path)
+            else await onLock(file.path)
           })}
           disabled={!isOnline || isLockedByOther || !!actionLoading}
           className="btn-riso btn-riso-secondary w-full text-[13px] py-1.5 rounded"

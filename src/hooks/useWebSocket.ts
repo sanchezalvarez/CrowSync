@@ -49,5 +49,10 @@ export function useCrowSyncWebSocket(
     }
   }, [serverUrl, projectId, memberName, apiKey])
 
+  // Surface the live socket instance for consumers (useFiles subscribes to it).
+  // It lives in a ref because it's imperative, not render-derived; the isConnected
+  // poll above drives the re-render that propagates it. Restructuring to state
+  // would risk the realtime path, so the ref read here is intentional.
+  // eslint-disable-next-line react-hooks/refs
   return { ws: wsRef.current, isConnected, events }
 }

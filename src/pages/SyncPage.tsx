@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { FileEntry, Activity } from '../types'
+import type { FileEntry, Activity, ApiError } from '../types'
 import type { CrowSyncClient } from '../api/client'
 import { setSyncBase, removeSyncBase } from '../utils/syncState'
 import { getLocalPath, joinLocal } from '../utils/localPath'
@@ -86,19 +86,20 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       // Keep the sync base current so a later local edit isn't misread as a
       // conflict against a stale base (K1).
       if (result && selectedId) setSyncBase(selectedId, path, result.current_version, result.checksum)
-    } catch (err: any) {
-      if (err.status === 409 && err.body) {
+    } catch (err) {
+      const e = err as ApiError
+      if (e.status === 409 && e.body) {
         setConflict({
           path,
-          serverVersion: err.body.server_version,
-          serverAuthor: err.body.server_author,
-          message: err.body.message || '',
+          serverVersion: e.body.server_version ?? 0,
+          serverAuthor: e.body.server_author ?? '',
+          message: e.body.message || '',
           pendingFile: file,
         })
-      } else if (err.status === 423) {
-        addToast(`File is locked by ${err.body?.locked_by || 'another user'}`)
+      } else if (e.status === 423) {
+        addToast(`File is locked by ${e.body?.locked_by || 'another user'}`)
       } else {
-        addToast(`Upload failed: ${err.message}`)
+        addToast(`Upload failed: ${e.message}`)
       }
     }
   }, [files, uploadFile])
@@ -113,8 +114,8 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       a.download = path.split('/').pop() || 'file'
       a.click()
       URL.revokeObjectURL(url)
-    } catch (err: any) {
-      addToast(`Download failed: ${err.message}`)
+    } catch (err) {
+      addToast(`Download failed: ${(err as ApiError).message}`)
     }
   }, [downloadFile])
 
@@ -144,14 +145,15 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       if (result?.skipped?.length) {
         addToast(`Skipped (locked by others): ${result.skipped.map(s => s.path.split('/').pop()).join(', ')}`)
       }
-    } catch (err: any) {
-      if (err.status === 423) addToast(`File is locked by ${err.body?.locked_by || 'another member'}`)
-      else addToast(err.message)
+    } catch (err) {
+      const e = err as ApiError
+      if (e.status === 423) addToast(`File is locked by ${e.body?.locked_by || 'another member'}`)
+      else addToast(e.message)
     }
   }, [lockDialog, lockFile, addToast])
 
   const doUnlock = useCallback(async (path: string, scope: 'file' | 'group') => {
-    try { await unlockFile(path, scope) } catch (err: any) { addToast(err.message) }
+    try { await unlockFile(path, scope) } catch (err) { addToast((err as ApiError).message) }
   }, [unlockFile, addToast])
 
   const handleUnlock = useCallback(async (path: string) => {
@@ -168,7 +170,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
   const handleRevert = useCallback(async (path: string, version: number) => {
     if (!confirm(`Revert ${path} to version ${version}?`)) return
-    try { await revertFile(path, version) } catch (err: any) { addToast(err.message) }
+    try { await revertFile(path, version) } catch (err) { addToast((err as ApiError).message) }
   }, [revertFile])
 
   const handleDelete = useCallback(async (path: string) => {
@@ -192,7 +194,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
           try { await nativeDeleteLocal(joinLocal(localPath, path)) } catch { /* leftover local file, non-fatal */ }
         }
       }
-    } catch (err: any) { addToast(err.message) }
+    } catch (err) { addToast((err as ApiError).message) }
   }, [deleteFile, files, selectedId])
 
   const handlePush = useCallback(async () => {
@@ -205,8 +207,8 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
           addToast(`Pushed ${result.done} files, ${result.errors.length} errors`)
         }
       }
-    } catch (err: any) {
-      addToast(`Push failed: ${err.message}`)
+    } catch (err) {
+      addToast(`Push failed: ${(err as ApiError).message}`)
     } finally {
       setPushing(false)
     }
@@ -222,8 +224,8 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
           addToast(`Pulled ${result.done} files, ${result.errors.length} errors`)
         }
       }
-    } catch (err: any) {
-      addToast(`Pull failed: ${err.message}`)
+    } catch (err) {
+      addToast(`Pull failed: ${(err as ApiError).message}`)
     } finally {
       setPulling(false)
     }
@@ -236,8 +238,8 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       const result = await uploadFile(conflict.path, conflict.pendingFile, existing?.current_version || 0, '', true)
       if (result && selectedId) setSyncBase(selectedId, conflict.path, result.current_version, result.checksum)
       setConflict(null)
-    } catch (err: any) {
-      addToast(`Force upload failed: ${err.message}`)
+    } catch (err) {
+      addToast(`Force upload failed: ${(err as ApiError).message}`)
     }
   }, [conflict, files, uploadFile])
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { FileEntry, SyncEvent } from '../types'
+import type { FileEntry } from '../types'
 import type { CrowSyncClient } from '../api/client'
 import type { CrowSyncWebSocket } from '../api/websocket'
 
@@ -33,7 +33,7 @@ export function useFiles(
   // Listen for WebSocket events — debounced refresh
   useEffect(() => {
     if (!ws) return
-    const unsub = ws.onAny((_event: SyncEvent) => {
+    const unsub = ws.onAny(() => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => refresh(), 500)
     })

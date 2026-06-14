@@ -3,12 +3,14 @@
 #   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 #
 # This override stops publishing 8001 on the host (Caddy reaches it over the
-# internal compose network) and exposes 80/443 instead. Edit the domain in
-# ./Caddyfile first. See AUDIT.md S3.
+# internal compose network) and exposes 80/443 instead. Set CROWSYNC_DOMAIN and
+# CROWSYNC_ACME_EMAIL in a sibling .env first (see .env.example). See AUDIT.md S3.
 services:
   crowsync:
-    # Drop the public HTTP port — only Caddy talks to the backend now.
-    ports: []
+    # Drop the public HTTP port — only Caddy talks to the backend now. The
+    # `!override` tag *replaces* the base port list (a plain `[]` would merge and
+    # leave 8001 published, leaking plaintext HTTP past the TLS proxy).
+    ports: !override []
 
   caddy:
     image: caddy:2
@@ -19,6 +21,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Substituted into ./Caddyfile via Caddy's {$VAR:default} placeholders.
+      # Compose fills these from a sibling .env; both have safe defaults so a
+      # bare `up` works for local testing (localhost cert, no public ACME).
+      - CROWSYNC_DOMAIN=${CROWSYNC_DOMAIN:-localhost}
+      - CROWSYNC_ACME_EMAIL=${CROWSYNC_ACME_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

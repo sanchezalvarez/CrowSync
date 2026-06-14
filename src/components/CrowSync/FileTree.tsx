@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import type { FileEntry, CompareResult } from '../../types'
 import { FILE_STATUS } from '../../types'
 
@@ -198,14 +198,19 @@ export function FileTree({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileEntry } | null>(null)
   const tree = useMemo(() => buildTree(files), [files])
 
-  useMemo(() => {
+  // Auto-expand every directory the first time the tree populates. A side effect
+  // (setState), so it belongs in an effect, not useMemo — guarded so it runs once.
+  useEffect(() => {
+    if (expandedDirs.size > 0) return
     const dirs = new Set<string>()
     const collectDirs = (nodes: TreeNode[]) => {
       nodes.forEach(n => { if (n.isDir) { dirs.add(n.path); collectDirs(n.children) } })
     }
     collectDirs(tree)
-    if (dirs.size > 0 && expandedDirs.size === 0) setExpandedDirs(dirs)
-  }, [tree])
+    // Intentional one-time population (guarded above) when the tree first loads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (dirs.size > 0) setExpandedDirs(dirs)
+  }, [tree, expandedDirs.size])
 
   const toggleDir = useCallback((path: string) => {
     setExpandedDirs(prev => {

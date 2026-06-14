@@ -87,13 +87,17 @@ server behind a TLS-terminating reverse proxy so that link is encrypted — a
 ready-to-use Caddy config is included:
 
 ```bash
-# 1. edit ./Caddyfile — set your domain
+# 1. set your domain (and ideally an ACME email) in a sibling .env:
+#      CROWSYNC_DOMAIN=crowsync.example.com
+#      CROWSYNC_ACME_EMAIL=ops@example.com
 # 2. start backend + Caddy (auto HTTPS via Let's Encrypt):
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 ```
 
 Then point the desktop app at `https://your-domain` (no `:8001`). For local
-testing set the Caddyfile site address to `localhost`. See `AUDIT.md` S3.
+testing leave `CROWSYNC_DOMAIN` unset — it defaults to `localhost`, where Caddy
+issues a locally-trusted cert. The TLS compose file stops publishing `:8001`, so
+the backend is only reachable through Caddy. See `AUDIT.md` S3 and `.env.example`.
 
 ## Connect from the desktop app
 

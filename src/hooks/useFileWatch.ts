@@ -170,8 +170,8 @@ export function useFileWatch(
               errors.push({ path: item.path, error: typeof detail === 'string' ? detail : `HTTP ${outcome.status}` })
             }
           }
-        } catch (e: any) {
-          errors.push({ path: item.path, error: e.message || String(e) })
+        } catch (e) {
+          errors.push({ path: item.path, error: e instanceof Error ? e.message : String(e) })
         }
       }
       // Propagate local deletes to the server (file we had synced, now gone locally,
@@ -215,8 +215,8 @@ export function useFileWatch(
           } else {
             errors.push({ path: f.path, error: `HTTP ${outcome.status}` })
           }
-        } catch (e: any) {
-          errors.push({ path: f.path, error: e.message || String(e) })
+        } catch (e) {
+          errors.push({ path: f.path, error: e instanceof Error ? e.message : String(e) })
         }
       }
       // Apply remote deletes locally (server dropped a file we still have unchanged)

@@ -5,7 +5,7 @@ interface ProjectPanelProps {
   projects: Project[]
   selectedId: number | null
   onSelect: (id: number) => void
-  onCreate: (name: string, description?: string, color?: string) => Promise<any>
+  onCreate: (name: string, description?: string, color?: string) => Promise<unknown>
   onDelete: (id: number) => Promise<void>
 }
 

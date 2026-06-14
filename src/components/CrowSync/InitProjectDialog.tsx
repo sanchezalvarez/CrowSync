@@ -66,8 +66,8 @@ export function InitProjectDialog({
       const found = await scanDir(path, patterns)
       setManifest(found)
       setPhase('confirm')
-    } catch (err: any) {
-      setErrorMessage(err.message || String(err))
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
       setPhase('error')
     }
   }, [client, project.id, editPath])
@@ -94,8 +94,8 @@ export function InitProjectDialog({
           const detail = outcome.body?.detail ?? outcome.body
           errors.push(`${f.path}: ${typeof detail === 'string' ? detail : `HTTP ${outcome.status}`}`)
         }
-      } catch (err: any) {
-        errors.push(`${f.path}: ${err.message || err}`)
+      } catch (err) {
+        errors.push(`${f.path}: ${err instanceof Error ? err.message : String(err)}`)
       }
       setProgress(p => p + 1)
     }

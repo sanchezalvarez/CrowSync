@@ -7,15 +7,26 @@
 # Caddy fetches + renews a Let's Encrypt certificate automatically as long as the
 # domain's DNS points at this host and ports 80/443 are reachable.
 #
+# Configuration is environment-driven (set these in a sibling .env — see
+# .env.example; docker-compose.tls.yml passes them into the container):
+#   CROWSYNC_DOMAIN      your public domain, e.g. crowsync.example.com
+#   CROWSYNC_ACME_EMAIL  email for Let's Encrypt expiry notices (optional)
+#
 # Usage:
-#   1. Replace crowsync.example.com with your domain.
-#   2. Point the desktop app's Server URL at https://crowsync.example.com (no :8001).
+#   1. Set CROWSYNC_DOMAIN (and ideally CROWSYNC_ACME_EMAIL) in .env.
+#   2. Point the desktop app's Server URL at https://<your-domain> (no :8001).
 #   3. Run alongside the backend — see docker-compose.tls.yml.
 #
-# Local testing without a public domain: replace the site address with
-# `localhost` (Caddy issues a local self-signed cert into its trust store).
+# Local testing without a public domain: leave CROWSYNC_DOMAIN unset (defaults to
+# `localhost`); Caddy issues a locally-trusted cert into its trust store.
 
-crowsync.example.com {
+{
+	# Email for ACME (Let's Encrypt) expiry notices. Empty is accepted — Caddy
+	# proceeds with a warning. Ignored when the site address is `localhost`.
+	email {$CROWSYNC_ACME_EMAIL:}
+}
+
+{$CROWSYNC_DOMAIN:localhost} {
 	# WebSocket upgrades are proxied transparently by reverse_proxy.
 	reverse_proxy crowsync:8001
 

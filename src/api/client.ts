@@ -1,4 +1,4 @@
-import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult } from '../types'
+import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError } from '../types'
 
 export class CrowSyncClient {
   private baseUrl: string
@@ -39,9 +39,9 @@ export class CrowSyncClient {
     if (!res.ok) {
       if (res.status === 401) this.onUnauthorized?.()
       const body = await res.json().catch(() => ({ detail: res.statusText }))
-      const err = new Error(typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail))
-      ;(err as any).status = res.status
-      ;(err as any).body = body.detail
+      const err: ApiError = new Error(typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail))
+      err.status = res.status
+      err.body = body.detail
       throw err
     }
     if (res.status === 204) return undefined as T

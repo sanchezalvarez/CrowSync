@@ -8,6 +8,27 @@ export interface Project {
   file_count?: number
 }
 
+/** Loosely-typed JSON body returned by API responses/errors. Known fields are
+ *  typed so reads stay safe; the index signature permits other keys without
+ *  resorting to `any`. */
+export interface ApiBody {
+  detail?: ApiBody
+  message?: string
+  current_version?: number
+  checksum?: string
+  server_version?: number
+  server_author?: string
+  locked_by?: string
+  [key: string]: unknown
+}
+
+/** Error thrown by the API client, carrying the HTTP status and parsed body so
+ *  callers can branch on 409/423 and surface server detail. */
+export interface ApiError extends Error {
+  status?: number
+  body?: ApiBody
+}
+
 /** One file in a client-supplied local-folder manifest (see Rust `scan_dir`). */
 export interface ManifestEntry {
   path: string

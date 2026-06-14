@@ -5,7 +5,7 @@
  * fails and `isNativeAvailable()` returns false, so callers degrade to read-only
  * (no scan/push/pull) — mirroring the fallback pattern in `folderPicker.ts`.
  */
-import type { ManifestEntry } from '../types'
+import type { ApiBody, ManifestEntry } from '../types'
 
 async function getInvoke() {
   try {
@@ -25,7 +25,7 @@ export function isNativeAvailable(): boolean {
 export interface TransferOutcome {
   ok: boolean
   status: number
-  body: any
+  body?: ApiBody
 }
 
 export async function scanDir(root: string, ignorePatterns: string[]): Promise<ManifestEntry[]> {

@@ -81,7 +81,7 @@ export class CrowSyncWebSocket {
     this.ws.onmessage = (e) => {
       try {
         const event: SyncEvent = JSON.parse(e.data)
-        if ((event as any).type === 'pong') return
+        if ((event as { type?: string }).type === 'pong') return
 
         const handlers = this.listeners.get(event.event)
         if (handlers) {

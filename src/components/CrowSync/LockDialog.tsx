@@ -29,6 +29,9 @@ export function LockDialog({ data, onCancel, onConfirm }: LockDialogProps) {
   const [checked, setChecked] = useState<Record<string, boolean>>({})
 
   // Seed checkbox state from the server's defaults whenever a new file is opened.
+  // Reset form state whenever a different file is opened — the standard
+  // reset-on-prop-change pattern; the extra render is intentional and bounded.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!data) return
     setReason('')
@@ -36,6 +39,7 @@ export function LockDialog({ data, onCancel, onConfirm }: LockDialogProps) {
     for (const s of data.suggestions) init[s.path] = s.checked && !s.locked_by
     setChecked(init)
   }, [data])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!data) return null
 
