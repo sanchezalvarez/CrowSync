@@ -150,8 +150,10 @@ export function FileDetail({
               <button
                 key={m.path}
                 onClick={() => onSelectFile(m)}
-                className={`w-full text-left flex items-center gap-1.5 text-[12px] px-1.5 py-0.5 rounded hover:bg-surface-2 ${
-                  m.path === file.path ? 'text-text-primary' : 'text-text-secondary'
+                className={`w-full text-left flex items-center gap-1.5 text-[12px] px-1.5 py-0.5 rounded transition-colors hover:bg-surface-3 border-l-2 ${
+                  m.path === file.path
+                    ? 'text-text-primary border-l-accent bg-accent-muted/30'
+                    : 'text-text-secondary border-l-transparent'
                 }`}
                 title={m.path}
               >
@@ -210,11 +212,12 @@ export function FileDetail({
                   )}
                   <p className="text-[11px] text-text-ghost">{formatTime(v.created_at)}</p>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-1.5 shrink-0">
                   <button
                     onClick={() => onDownload(file.path, v.version)}
                     disabled={!isOnline}
-                    className="text-text-ghost hover:text-pull disabled:opacity-30 transition-colors"
+                    className="btn-riso btn-riso-secondary text-[12px] w-6 h-6 px-0 rounded disabled:opacity-30"
+                    title="Download this version"
                   >
                     {'\u2193'}
                   </button>
@@ -222,7 +225,8 @@ export function FileDetail({
                     <button
                       onClick={() => onRevert(file.path, v.version)}
                       disabled={!isOnline}
-                      className="text-text-ghost hover:text-accent disabled:opacity-30 transition-colors"
+                      className="btn-riso btn-riso-secondary text-[12px] w-6 h-6 px-0 rounded disabled:opacity-30"
+                      title="Revert to this version"
                     >
                       {'\u21BA'}
                     </button>

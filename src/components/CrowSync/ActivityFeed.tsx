@@ -95,7 +95,7 @@ function PullSessionRow({ session, expanded, onToggle, onRevert }: PullSessionRo
   }
 
   return (
-    <div className="border-b border-border/40 border-l-2 border-l-pull hover:bg-surface-2/50 transition-colors">
+    <div className="log-entry border-b border-border/40 border-l-2 border-l-pull hover:bg-surface-2/50 transition-colors">
       <div className="px-3 py-1.5">
         <div className="flex items-center gap-1.5 text-[13px]">
           <span className="text-pull text-[12px]">{'↓'}</span>
@@ -106,7 +106,7 @@ function PullSessionRow({ session, expanded, onToggle, onRevert }: PullSessionRo
           <p className="text-[13px] text-text-secondary truncate flex-1" title={summary}>{summary}</p>
           <button
             onClick={onToggle}
-            className="text-text-ghost hover:text-text-secondary text-[12px] font-mono px-1 shrink-0"
+            className="btn-riso btn-riso-secondary text-[11px] font-mono px-1 py-px rounded shrink-0"
             title={expanded ? 'Collapse' : 'Expand'}
           >
             {expanded ? '˅' : '›'}
@@ -114,7 +114,7 @@ function PullSessionRow({ session, expanded, onToggle, onRevert }: PullSessionRo
           {hasRevertable && onRevert && (
             <button
               onClick={onRevert}
-              className="text-[11px] font-mono text-danger hover:text-danger border border-danger/40 hover:border-danger/80 px-1 py-px rounded shrink-0 transition-colors"
+              className="btn-riso btn-riso-danger text-[11px] font-mono px-1 py-px rounded shrink-0"
               title="Revert this pull (restore server files to pre-pull versions)"
             >
               Revert

@@ -308,7 +308,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       {/* Topbar */}
       <header className="h-11 bg-surface-1 border-b border-border-active flex items-center px-4 gap-3 shrink-0" style={{ boxShadow: '0 1px 0 var(--color-border-active)' }}>
         <div className="flex items-center gap-1.5">
-          <span className="text-accent font-bold text-sm font-mono" style={{ textShadow: '1px 1px 0px #00D4AA' }}>CS</span>
+          <span className="text-accent font-bold text-sm font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
           <span className="text-text-primary font-semibold text-sm tracking-wide">CrowSync</span>
         </div>
 
@@ -380,14 +380,9 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
               disabled={!isOnline || pulling || !hasRemoteChanges}
               className={`btn-riso text-[13px] font-mono font-bold px-2.5 py-1 rounded ${
                 hasRemoteChanges
-                  ? 'text-pull border-pull/40'
+                  ? 'btn-riso-pull'
                   : 'btn-riso-secondary'
               }`}
-              style={hasRemoteChanges ? {
-                backgroundColor: 'var(--color-pull-muted)',
-                boxShadow: hasRemoteChanges ? '3px 3px 0px var(--color-pull)' : undefined,
-                borderColor: 'var(--color-pull)',
-              } : undefined}
             >
               {pulling ? 'PULL...' : `PULL${hasRemoteChanges ? ` ${(changeSummary?.new_remote || 0) + (changeSummary?.behind || 0)}` : ''}`}
             </button>
@@ -417,7 +412,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
         <button
           onClick={onSettings}
-          className="text-text-ghost hover:text-text-secondary transition-colors text-sm leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-surface-3"
+          className="btn-riso btn-riso-secondary text-[13px] w-7 h-7 px-0 rounded shrink-0"
           title="Settings"
         >
           {'\u2699\uFE0F'}

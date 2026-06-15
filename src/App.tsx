@@ -184,7 +184,7 @@ function App() {
       <div className="h-screen bg-surface-0 scanlines flex items-center justify-center">
         <div className="w-[360px] animate-riso-fade-up">
           <div className="flex items-center gap-2 mb-8">
-            <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px #00D4AA' }}>CS</span>
+            <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
             <span className="text-text-primary font-semibold tracking-wide">CrowSync</span>
           </div>
 
@@ -265,7 +265,7 @@ function App() {
       <div className="h-screen bg-surface-0 scanlines overflow-y-auto flex items-start justify-center py-10">
         <div className="w-[420px] animate-riso-fade-up">
           <div className="flex items-center gap-2 mb-6">
-            <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px #00D4AA' }}>CS</span>
+            <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
             <span className="text-text-primary font-semibold tracking-wide">Settings</span>
           </div>
 

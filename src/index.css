@@ -177,6 +177,23 @@ body {
   box-shadow: var(--btn-shadow-active);
 }
 
+/* Pull (blue) variant */
+.btn-riso-pull {
+  background-color: var(--color-pull-muted);
+  color: var(--color-pull);
+  border-color: var(--color-pull);
+  box-shadow: 3px 3px 0px var(--color-pull);
+  --btn-shadow-hover: 2px 2px 0px var(--color-pull);
+  --btn-shadow-active: 0px 0px 0px var(--color-pull);
+}
+.btn-riso-pull:hover:not(:disabled) {
+  background-color: var(--color-pull-muted);
+  box-shadow: var(--btn-shadow-hover);
+}
+.btn-riso-pull:active:not(:disabled) {
+  box-shadow: var(--btn-shadow-active);
+}
+
 /* Danger ghost */
 .btn-riso-danger {
   background-color: transparent;
