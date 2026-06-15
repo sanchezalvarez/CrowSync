@@ -41,7 +41,7 @@ export async function scanDir(
 ): Promise<ManifestEntry[]> {
   // Channel lives in the same module as invoke, so load core directly here.
   const core = await import('@tauri-apps/api/core').catch(() => null)
-  if (!core) throw new Error('Native scan unavailable (browser mode)')
+  if (!core?.invoke) throw new Error('Native scan unavailable (browser mode)')
   // The Rust command always expects the channel; without a callback its
   // messages are simply dropped.
   const channel = new core.Channel<ScanProgress>()
