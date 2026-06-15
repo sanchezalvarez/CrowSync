@@ -202,11 +202,14 @@ export function useFileWatch(
     setLoading(true)
     const errors: SyncResult['errors'] = []
     let done = 0
+    const pulled: Array<{ path: string; pre_version: number; new_version: number }> = []
     try {
       // Pull server-only files AND files where only the server moved (behind).
       const queue = [...comparison.new_remote, ...comparison.behind]
       for (const f of queue) {
         try {
+          // Record the pre-pull version so we can create a revertable session.
+          const preVersion = getSyncState(projectId)[f.path]?.version ?? 0
           const outcome = await nativeDownload({
             serverUrl, memberName, apiKey, projectId,
             relPath: f.path, destAbsPath: joinLocal(localPath, f.path),
@@ -215,6 +218,7 @@ export function useFileWatch(
             done++
             // The local copy now matches this server version — record it as base.
             setSyncBase(projectId, f.path, f.server_version, f.server_checksum)
+            pulled.push({ path: f.path, pre_version: preVersion, new_version: f.server_version })
           } else {
             errors.push({ path: f.path, error: `HTTP ${outcome.status}` })
           }
@@ -233,6 +237,14 @@ export function useFileWatch(
           } catch (e) {
             errors.push({ path: d.path, error: e instanceof Error ? e.message : String(e) })
           }
+        }
+      }
+      // Log the pull session so the user can revert it later.
+      if (pulled.length > 0) {
+        try {
+          await client.logPullSession(projectId, pulled)
+        } catch {
+          // Non-fatal: session logging failure should not abort a successful pull.
         }
       }
       await compare()

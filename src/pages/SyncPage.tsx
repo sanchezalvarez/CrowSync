@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { FileEntry, Activity, ApiError } from '../types'
+import type { FileEntry, Activity, ApiError, PullSession } from '../types'
 import type { CrowSyncClient } from '../api/client'
 import { setSyncBase, removeSyncBase } from '../utils/syncState'
 import { getLocalPath, joinLocal } from '../utils/localPath'
@@ -54,6 +54,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
   const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
+  const [pullSessions, setPullSessions] = useState<PullSession[]>([])
   const [conflict, setConflict] = useState<ConflictInfo | null>(null)
   const [lockDialog, setLockDialog] = useState<LockDialogData | null>(null)
   const [unlockDialog, setUnlockDialog] = useState<{ path: string; count: number } | null>(null)
@@ -69,6 +70,12 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       return
     }
     client.listActivity(selectedId).then(setActivities).catch(() => {})
+  }, [client, selectedId, files])
+
+  // Load pull sessions when project changes
+  useEffect(() => {
+    if (!selectedId) { setPullSessions([]); return }
+    client.getPullSessions(selectedId).then(setPullSessions).catch(() => {})
   }, [client, selectedId, files])
 
   // Update selected file when files change
@@ -231,6 +238,20 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       setPulling(false)
     }
   }, [pull, refresh])
+
+  const handleRevertPullSession = useCallback(async (sessionId: number) => {
+    if (!selectedId) return
+    try {
+      const result = await client.revertPullSession(selectedId, sessionId)
+      await refresh()
+      const msg = result.errors.length > 0
+        ? `Reverted ${result.reverted.length} files, ${result.errors.length} errors`
+        : `Reverted ${result.reverted.length} files`
+      addToast(msg)
+    } catch (err) {
+      addToast(`Revert failed: ${(err as ApiError).message}`)
+    }
+  }, [client, selectedId, refresh, addToast])
 
   const handleForceUpload = useCallback(async () => {
     if (!conflict?.pendingFile) return
@@ -469,7 +490,12 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
         )}
 
         {/* Activity log — right column */}
-        <ActivityFeed activities={activities} events={events} />
+        <ActivityFeed
+          activities={activities}
+          events={events}
+          pullSessions={pullSessions}
+          onRevertPullSession={handleRevertPullSession}
+        />
       </div>
 
       {/* Init project dialog */}
