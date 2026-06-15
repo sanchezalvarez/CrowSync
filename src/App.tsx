@@ -176,7 +176,7 @@ function App() {
       })
     } catch { /* ignore */ }
     setShowSettings(false)
-  }, [client, formStorageRoot, formAutoUnlock, formMaxFileSize])
+  }, [client, formStorageRoot, formAutoUnlock, formMaxFileSize, formTheme, formSyncInterval, formSettingsAdminToken])
 
   // ── Setup ─────────────────────────────────────────────────────────
   if (showSetup) {

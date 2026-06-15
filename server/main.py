@@ -1185,7 +1185,9 @@ async def create_pull_session_endpoint(
     body: PullSessionCreate,
     member: dict = Depends(get_current_member),
 ):
-    _assert_project(project_id)
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
     if not body.files:
         raise HTTPException(400, "No files provided")
     session_id = storage.create_pull_session(project_id, member["id"], body.files)
@@ -1198,7 +1200,9 @@ async def list_pull_sessions_endpoint(
     limit: int = 20,
     member: dict = Depends(get_current_member),
 ):
-    _assert_project(project_id)
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
     return storage.list_pull_sessions(project_id, limit)
 
 
@@ -1208,7 +1212,9 @@ async def revert_pull_session_endpoint(
     session_id: int,
     member: dict = Depends(get_current_member),
 ):
-    _assert_project(project_id)
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
     session = storage.get_pull_session(session_id)
     if not session or session["project_id"] != project_id:
         raise HTTPException(404, "Pull session not found")
