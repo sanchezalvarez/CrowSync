@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { FileEntry, Activity, ApiError } from '../types'
+import type { FileEntry, Activity, ApiError, PullSession } from '../types'
 import type { CrowSyncClient } from '../api/client'
 import { setSyncBase, removeSyncBase } from '../utils/syncState'
 import { getLocalPath, joinLocal } from '../utils/localPath'
@@ -27,6 +27,7 @@ interface SyncPageProps {
   memberName: string
   apiKey: string
   currentMemberId: number | null
+  syncInterval: number
   onSettings: () => void
 }
 
@@ -38,7 +39,7 @@ interface ConflictInfo {
   pendingFile?: File
 }
 
-export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberId, onSettings }: SyncPageProps) {
+export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberId, syncInterval, onSettings }: SyncPageProps) {
   const { projects, selectedId, select, createProject, deleteProject } = useProjects(client)
   const { ws, events } = useCrowSyncWebSocket(serverUrl, selectedId, memberName, apiKey)
   const {
@@ -49,16 +50,19 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
   const {
     comparison, hasLocalChanges, hasRemoteChanges, native, isUnity,
     push, pull, compare,
-  } = useFileWatch(client, selectedId, serverUrl, memberName, apiKey, isOnline)
+  } = useFileWatch(client, selectedId, serverUrl, memberName, apiKey, isOnline, syncInterval)
 
   const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
+  const [pullSessions, setPullSessions] = useState<PullSession[]>([])
   const [conflict, setConflict] = useState<ConflictInfo | null>(null)
   const [lockDialog, setLockDialog] = useState<LockDialogData | null>(null)
   const [unlockDialog, setUnlockDialog] = useState<{ path: string; count: number } | null>(null)
   const [pushing, setPushing] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [showInit, setShowInit] = useState(false)
+  const [showProjects, setShowProjects] = useState(true)
+  const [showActivity, setShowActivity] = useState(true)
   const { toasts, addToast, removeToast } = useToast()
 
   // Load activities when project changes
@@ -68,6 +72,12 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       return
     }
     client.listActivity(selectedId).then(setActivities).catch(() => {})
+  }, [client, selectedId, files])
+
+  // Load pull sessions when project changes
+  useEffect(() => {
+    if (!selectedId) { setPullSessions([]); return }
+    client.getPullSessions(selectedId).then(setPullSessions).catch(() => {})
   }, [client, selectedId, files])
 
   // Update selected file when files change
@@ -231,6 +241,20 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
     }
   }, [pull, refresh])
 
+  const handleRevertPullSession = useCallback(async (sessionId: number) => {
+    if (!selectedId) return
+    try {
+      const result = await client.revertPullSession(selectedId, sessionId)
+      await refresh()
+      const msg = result.errors.length > 0
+        ? `Reverted ${result.reverted.length} files, ${result.errors.length} errors`
+        : `Reverted ${result.reverted.length} files`
+      addToast(msg)
+    } catch (err) {
+      addToast(`Revert failed: ${(err as ApiError).message}`)
+    }
+  }, [client, selectedId, refresh, addToast])
+
   const handleForceUpload = useCallback(async () => {
     if (!conflict?.pendingFile) return
     try {
@@ -284,9 +308,17 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       {/* Topbar */}
       <header className="h-11 bg-surface-1 border-b border-border-active flex items-center px-4 gap-3 shrink-0" style={{ boxShadow: '0 1px 0 var(--color-border-active)' }}>
         <div className="flex items-center gap-1.5">
-          <span className="text-accent font-bold text-sm font-mono" style={{ textShadow: '1px 1px 0px #00D4AA' }}>CS</span>
+          <span className="text-accent font-bold text-sm font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
           <span className="text-text-primary font-semibold text-sm tracking-wide">CrowSync</span>
         </div>
+
+        <button
+          onClick={() => setShowProjects(p => !p)}
+          className="btn-riso btn-riso-secondary text-[11px] font-mono px-1.5 py-0.5 rounded shrink-0"
+          title={showProjects ? 'Hide projects' : 'Show projects'}
+        >
+          {showProjects ? '‹' : '›'}
+        </button>
 
         {selectedId && (
           <span className="text-text-muted text-xs font-mono">
@@ -348,14 +380,9 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
               disabled={!isOnline || pulling || !hasRemoteChanges}
               className={`btn-riso text-[13px] font-mono font-bold px-2.5 py-1 rounded ${
                 hasRemoteChanges
-                  ? 'text-pull border-pull/40'
+                  ? 'btn-riso-pull'
                   : 'btn-riso-secondary'
               }`}
-              style={hasRemoteChanges ? {
-                backgroundColor: 'var(--color-pull-muted)',
-                boxShadow: hasRemoteChanges ? '3px 3px 0px var(--color-pull)' : undefined,
-                borderColor: 'var(--color-pull)',
-              } : undefined}
             >
               {pulling ? 'PULL...' : `PULL${hasRemoteChanges ? ` ${(changeSummary?.new_remote || 0) + (changeSummary?.behind || 0)}` : ''}`}
             </button>
@@ -376,8 +403,16 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
         <span className="text-[13px] text-text-muted font-mono">{memberName}</span>
 
         <button
+          onClick={() => setShowActivity(a => !a)}
+          className="btn-riso btn-riso-secondary text-[11px] font-mono px-1.5 py-0.5 rounded shrink-0"
+          title={showActivity ? 'Hide activity log' : 'Show activity log'}
+        >
+          {showActivity ? '\u203A' : '\u2039'}
+        </button>
+
+        <button
           onClick={onSettings}
-          className="text-text-ghost hover:text-text-secondary transition-colors text-sm leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-surface-3"
+          className="btn-riso btn-riso-secondary text-[13px] w-7 h-7 px-0 rounded shrink-0"
           title="Settings"
         >
           {'\u2699\uFE0F'}
@@ -398,13 +433,15 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        <ProjectPanel
-          projects={projects}
-          selectedId={selectedId}
-          onSelect={select}
-          onCreate={createProject}
-          onDelete={deleteProject}
-        />
+        {showProjects && (
+          <ProjectPanel
+            projects={projects}
+            selectedId={selectedId}
+            onSelect={select}
+            onCreate={createProject}
+            onDelete={deleteProject}
+          />
+        )}
 
         {selectedId ? (
           files.length === 0 && !comparison ? (
@@ -445,20 +482,22 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
                 currentMemberId={currentMemberId}
                 isOnline={isOnline}
               />
-              <FileDetail
-                file={selectedFile}
-                files={files}
-                currentMemberId={currentMemberId}
-                isOnline={isOnline}
-                client={client}
-                projectId={selectedId}
-                onUpload={handleUpload}
-                onDownload={handleDownload}
-                onLock={handleLock}
-                onUnlock={handleUnlock}
-                onRevert={handleRevert}
-                onSelectFile={setSelectedFile}
-              />
+              {selectedFile && (
+                <FileDetail
+                  file={selectedFile}
+                  files={files}
+                  currentMemberId={currentMemberId}
+                  isOnline={isOnline}
+                  client={client}
+                  projectId={selectedId}
+                  onUpload={handleUpload}
+                  onDownload={handleDownload}
+                  onLock={handleLock}
+                  onUnlock={handleUnlock}
+                  onRevert={handleRevert}
+                  onSelectFile={setSelectedFile}
+                />
+              )}
             </>
           )
         ) : (
@@ -468,7 +507,14 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
         )}
 
         {/* Activity log — right column */}
-        <ActivityFeed activities={activities} events={events} />
+        {showActivity && (
+          <ActivityFeed
+            activities={activities}
+            events={events}
+            pullSessions={pullSessions}
+            onRevertPullSession={handleRevertPullSession}
+          />
+        )}
       </div>
 
       {/* Init project dialog */}

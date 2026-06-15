@@ -519,6 +519,68 @@ def create_activity(
         return _row_to_dict(row)
 
 
+def create_pull_session(project_id: int, member_id: int, files: list[dict]) -> int:
+    """files: list of {path, pre_version, new_version}"""
+    with with_transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO pull_sessions (project_id, member_id, file_count) VALUES (?, ?, ?)",
+            (project_id, member_id, len(files)),
+        )
+        session_id = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO pull_session_files (session_id, file_path, pre_version, new_version) VALUES (?, ?, ?, ?)",
+            [(session_id, f["path"], f["pre_version"], f["new_version"]) for f in files],
+        )
+        return session_id
+
+
+def list_pull_sessions(project_id: int, limit: int = 20) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT ps.id, ps.project_id, ps.member_id, ps.file_count, ps.created_at,
+                  m.name AS member_name, m.avatar_color
+           FROM pull_sessions ps
+           LEFT JOIN members m ON ps.member_id = m.id
+           WHERE ps.project_id = ?
+           ORDER BY ps.created_at DESC LIMIT ?""",
+        (project_id, limit),
+    ).fetchall()
+    result = []
+    for row in rows:
+        files = conn.execute(
+            "SELECT file_path, pre_version, new_version FROM pull_session_files WHERE session_id = ? ORDER BY id",
+            (row["id"],),
+        ).fetchall()
+        d = dict(row)
+        d["files"] = [dict(f) for f in files]
+        result.append(d)
+    conn.close()
+    return result
+
+
+def get_pull_session(session_id: int) -> dict | None:
+    conn = _get_conn()
+    row = conn.execute(
+        """SELECT ps.id, ps.project_id, ps.member_id, ps.file_count, ps.created_at,
+                  m.name AS member_name
+           FROM pull_sessions ps
+           LEFT JOIN members m ON ps.member_id = m.id
+           WHERE ps.id = ?""",
+        (session_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return None
+    files = conn.execute(
+        "SELECT file_path, pre_version, new_version FROM pull_session_files WHERE session_id = ? ORDER BY id",
+        (session_id,),
+    ).fetchall()
+    d = dict(row)
+    d["files"] = [dict(f) for f in files]
+    conn.close()
+    return d
+
+
 def list_activity(project_id: int, limit: int = 50, offset: int = 0) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("""

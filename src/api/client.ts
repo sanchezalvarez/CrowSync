@@ -1,4 +1,4 @@
-import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError } from '../types'
+import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError, PullSession, PullRevertResult } from '../types'
 
 export class CrowSyncClient {
   private baseUrl: string
@@ -234,5 +234,21 @@ export class CrowSyncClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     })
+  }
+
+  async logPullSession(projectId: number, files: Array<{ path: string; pre_version: number; new_version: number }>): Promise<{ id: number }> {
+    return this.request(`/projects/${projectId}/pull-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files }),
+    })
+  }
+
+  async getPullSessions(projectId: number): Promise<PullSession[]> {
+    return this.request(`/projects/${projectId}/pull-sessions`)
+  }
+
+  async revertPullSession(projectId: number, sessionId: number): Promise<PullRevertResult> {
+    return this.request(`/projects/${projectId}/pull-sessions/${sessionId}/revert`, { method: 'POST' })
   }
 }
