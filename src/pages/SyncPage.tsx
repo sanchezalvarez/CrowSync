@@ -27,6 +27,7 @@ interface SyncPageProps {
   memberName: string
   apiKey: string
   currentMemberId: number | null
+  syncInterval: number
   onSettings: () => void
 }
 
@@ -38,7 +39,7 @@ interface ConflictInfo {
   pendingFile?: File
 }
 
-export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberId, onSettings }: SyncPageProps) {
+export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberId, syncInterval, onSettings }: SyncPageProps) {
   const { projects, selectedId, select, createProject, deleteProject } = useProjects(client)
   const { ws, events } = useCrowSyncWebSocket(serverUrl, selectedId, memberName, apiKey)
   const {
@@ -49,7 +50,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
   const {
     comparison, hasLocalChanges, hasRemoteChanges, native, isUnity,
     push, pull, compare,
-  } = useFileWatch(client, selectedId, serverUrl, memberName, apiKey, isOnline)
+  } = useFileWatch(client, selectedId, serverUrl, memberName, apiKey, isOnline, syncInterval)
 
   const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])

@@ -6,7 +6,7 @@ import { getSyncState, setSyncBase, removeSyncBase } from '../utils/syncState'
 import { newUploadId, getPendingUpload, setPendingUpload, clearPendingUpload } from '../utils/uploadState'
 import { isNativeAvailable, scanDir, nativeUpload, nativeDownload, nativeDeleteLocal, detectUnity } from '../utils/nativeFs'
 
-const POLL_INTERVAL = 5000 // 5 seconds
+const DEFAULT_POLL_INTERVAL = 5000
 
 /**
  * Client-side sync orchestration for the distributed model.
@@ -26,6 +26,7 @@ export function useFileWatch(
   memberName: string,
   apiKey: string,
   enabled: boolean = true,
+  syncInterval: number = DEFAULT_POLL_INTERVAL,
 ) {
   const [comparison, setComparison] = useState<CompareResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -110,14 +111,14 @@ export function useFileWatch(
       return
     }
     compare()
-    intervalRef.current = setInterval(compare, POLL_INTERVAL)
+    intervalRef.current = setInterval(compare, syncInterval)
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
     }
-  }, [enabled, compare, client, projectId, native])
+  }, [enabled, compare, client, projectId, native, syncInterval])
 
   const push = useCallback(async (): Promise<SyncResult | null> => {
     if (!client || !projectId || !comparison) return null

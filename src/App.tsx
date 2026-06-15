@@ -29,6 +29,24 @@ function App() {
   const [ignoreRules, setIgnoreRules] = useState<string[]>([])
   const [unityRules, setUnityRules] = useState<string[]>([])
 
+  // Client-side preferences
+  const [theme, setTheme] = useState<'light' | 'dark'>(() =>
+    (localStorage.getItem('crowsync_theme') as 'light' | 'dark') || 'light'
+  )
+  const [syncInterval, setSyncInterval] = useState<number>(() =>
+    Number(localStorage.getItem('crowsync_sync_interval') || '5000')
+  )
+
+  // Form state for settings (client prefs)
+  const [formTheme, setFormTheme] = useState<'light' | 'dark'>(theme)
+  const [formSyncInterval, setFormSyncInterval] = useState<string>(String(syncInterval))
+  const [formSettingsAdminToken, setFormSettingsAdminToken] = useState('')
+
+  // Apply theme to <html>
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
   // A 401 on an authenticated call means the stored session is stale (the server
   // doesn't recognize this member/key — e.g. the DB was reset). Drop the key and
   // return to setup with an explanation instead of failing silently on every call.
@@ -50,6 +68,12 @@ function App() {
   }, [serverUrl, memberName, apiKey, handleUnauthorized])
 
   useEffect(() => {
+    if (showSettings) {
+      // sync client-side form state from live values
+      setFormTheme(theme)
+      setFormSyncInterval(String(syncInterval))
+      setFormSettingsAdminToken(localStorage.getItem('crowsync_admin_token') || '')
+    }
     if (showSettings && client) {
       client.getSettings().then(s => {
         setFormStorageRoot(s.storage_root)
@@ -59,7 +83,7 @@ function App() {
       client.getIgnorePatterns().then(setIgnoreRules).catch(() => {})
       client.getUnityIgnorePatterns().then(setUnityRules).catch(() => {})
     }
-  }, [showSettings, client])
+  }, [showSettings, client, theme, syncInterval])
 
   const testConnection = useCallback(async () => {
     setTestResult('testing')
@@ -131,6 +155,18 @@ function App() {
 
   const saveServerSettings = useCallback(async () => {
     if (!client) return
+    // Save client-side preferences
+    localStorage.setItem('crowsync_theme', formTheme)
+    setTheme(formTheme)
+    const interval = Number(formSyncInterval) || 5000
+    localStorage.setItem('crowsync_sync_interval', String(interval))
+    setSyncInterval(interval)
+    if (formSettingsAdminToken.trim()) {
+      localStorage.setItem('crowsync_admin_token', formSettingsAdminToken.trim())
+    } else {
+      localStorage.removeItem('crowsync_admin_token')
+    }
+    // Save server settings
     try {
       await client.updateSettings({
         storage_root: formStorageRoot,
@@ -225,14 +261,16 @@ function App() {
   // ── Settings ──────────────────────────────────────────────────────
   if (showSettings) {
     return (
-      <div className="h-screen bg-surface-0 scanlines flex items-center justify-center">
-        <div className="w-[400px] animate-riso-fade-up">
+      <div className="h-screen bg-surface-0 scanlines overflow-y-auto flex items-start justify-center py-10">
+        <div className="w-[420px] animate-riso-fade-up">
           <div className="flex items-center gap-2 mb-6">
             <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px #00D4AA' }}>CS</span>
             <span className="text-text-primary font-semibold tracking-wide">Settings</span>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
+
+            {/* ── Session info ── */}
             <div className="card-riso rounded p-3 space-y-1">
               <div className="flex justify-between text-[13px]">
                 <span className="text-text-muted font-mono tracking-widest">USER</span>
@@ -240,58 +278,118 @@ function App() {
               </div>
               <div className="flex justify-between text-[13px]">
                 <span className="text-text-muted font-mono tracking-widest">SERVER</span>
-                <span className="text-text-secondary font-mono">{serverUrl}</span>
+                <span className="text-text-secondary font-mono text-right truncate max-w-[220px]">{serverUrl}</span>
               </div>
               {apiKey && (
                 <div className="flex justify-between text-[13px]">
                   <span className="text-text-muted font-mono tracking-widest">API KEY</span>
-                  <span className="text-text-secondary font-mono">{apiKey.slice(0, 8)}...</span>
+                  <span className="text-text-secondary font-mono">{apiKey.slice(0, 8)}…</span>
                 </div>
               )}
             </div>
 
+            {/* ── Appearance ── */}
             <div>
-              <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Storage path</label>
-              <div className="flex gap-1.5">
-                <input type="text" value={formStorageRoot}
-                  onChange={e => setFormStorageRoot(e.target.value)}
-                  placeholder="D:\server\ or \\server01\crowsync"
-                  className="input-riso flex-1 rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
-                />
-                <button type="button"
-                  onClick={async () => { const p = await pickFolder('Select storage folder'); if (p) setFormStorageRoot(p) }}
-                  className="btn-riso btn-riso-secondary text-[13px] px-3 rounded shrink-0">
-                  ...
+              <p className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-widest mb-2">Appearance</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFormTheme('light')}
+                  className={`btn-riso flex-1 text-[13px] py-2 rounded gap-1.5 ${formTheme === 'light' ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
+                  ☀ Light
+                </button>
+                <button
+                  onClick={() => setFormTheme('dark')}
+                  className={`btn-riso flex-1 text-[13px] py-2 rounded gap-1.5 ${formTheme === 'dark' ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
+                  ☾ Dark
                 </button>
               </div>
-              <p className="text-[12px] text-text-ghost mt-1">Where server stores versioned files</p>
             </div>
 
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Auto-unlock (h)</label>
-                <input type="number" min="1" value={formAutoUnlock}
-                  onChange={e => setFormAutoUnlock(e.target.value)}
-                  placeholder="24"
-                  className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
-                />
-                <p className="text-[12px] text-text-ghost mt-1">Release stale locks after</p>
-              </div>
-              <div className="flex-1">
-                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Max file (MB)</label>
-                <input type="number" min="1" value={formMaxFileSize}
-                  onChange={e => setFormMaxFileSize(e.target.value)}
-                  placeholder="2048"
-                  className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
-                />
-                <p className="text-[12px] text-text-ghost mt-1">Upload size limit</p>
-              </div>
-            </div>
-
-            {/* Ignore rules (read-only) */}
+            {/* ── Sync ── */}
             <div>
-              <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Ignore Rules</label>
-              <div className="card-riso rounded p-2 max-h-40 overflow-y-auto space-y-2">
+              <p className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-widest mb-2">Sync</p>
+              <div>
+                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Poll interval</label>
+                <div className="flex gap-1.5">
+                  {[
+                    { label: '1s', value: '1000' },
+                    { label: '5s', value: '5000' },
+                    { label: '15s', value: '15000' },
+                    { label: '30s', value: '30000' },
+                  ].map(opt => (
+                    <button key={opt.value}
+                      onClick={() => setFormSyncInterval(opt.value)}
+                      className={`btn-riso flex-1 text-[13px] py-1.5 rounded ${formSyncInterval === opt.value ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[12px] text-text-ghost mt-1">How often the desktop app checks for changes</p>
+              </div>
+            </div>
+
+            {/* ── Admin ── */}
+            <div>
+              <p className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-widest mb-2">Admin</p>
+              <div>
+                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Admin token</label>
+                <input type="password" value={formSettingsAdminToken}
+                  onChange={e => setFormSettingsAdminToken(e.target.value)}
+                  placeholder="Leave empty to clear stored token"
+                  className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
+                />
+                <p className="text-[12px] text-text-ghost mt-1">Required to register members and change server settings</p>
+              </div>
+            </div>
+
+            {/* ── Server settings (admin) ── */}
+            <div>
+              <p className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-widest mb-2">Server <span className="text-text-ghost normal-case font-normal">(admin only)</span></p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Storage path</label>
+                  <div className="flex gap-1.5">
+                    <input type="text" value={formStorageRoot}
+                      onChange={e => setFormStorageRoot(e.target.value)}
+                      placeholder="D:\server\ or \\server01\crowsync"
+                      className="input-riso flex-1 rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
+                    />
+                    <button type="button"
+                      onClick={async () => { const p = await pickFolder('Select storage folder'); if (p) setFormStorageRoot(p) }}
+                      className="btn-riso btn-riso-secondary text-[13px] px-3 rounded shrink-0">
+                      ...
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-text-ghost mt-1">Where server stores versioned files</p>
+                </div>
+
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Auto-unlock (h)</label>
+                    <input type="number" min="1" value={formAutoUnlock}
+                      onChange={e => setFormAutoUnlock(e.target.value)}
+                      placeholder="24"
+                      className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
+                    />
+                    <p className="text-[12px] text-text-ghost mt-1">Release stale locks after</p>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Max file (MB)</label>
+                    <input type="number" min="1" value={formMaxFileSize}
+                      onChange={e => setFormMaxFileSize(e.target.value)}
+                      placeholder="2048"
+                      className="input-riso w-full rounded px-3 py-1.5 text-[14px] text-text-primary font-mono placeholder-text-ghost"
+                    />
+                    <p className="text-[12px] text-text-ghost mt-1">Upload size limit</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Ignore rules (read-only) ── */}
+            <div>
+              <p className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-widest mb-2">Ignore rules</p>
+              <div className="card-riso rounded p-2 max-h-36 overflow-y-auto space-y-2">
                 <div>
                   <p className="text-[11px] text-text-ghost font-mono mb-1">Default</p>
                   <div className="flex flex-wrap gap-1">
@@ -312,7 +410,8 @@ function App() {
               <p className="text-[12px] text-text-ghost mt-1">Hardcoded for now; per-project additions via <span className="font-mono">.crowsyncignore</span></p>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            {/* ── Save / Cancel ── */}
+            <div className="flex gap-2 pt-1">
               <button onClick={saveServerSettings}
                 className="btn-riso btn-riso-primary flex-1 text-xs py-2 rounded">
                 Save
@@ -323,15 +422,21 @@ function App() {
               </button>
             </div>
 
-            <button
-              onClick={() => {
-                localStorage.clear()
-                setMemberName(''); setServerUrl('http://localhost:8001')
-                setClient(null); setShowSettings(false); setShowSetup(true)
-              }}
-              className="w-full text-[13px] text-text-ghost hover:text-danger transition-colors pt-1">
-              Disconnect &amp; reset
-            </button>
+            {/* ── Danger zone ── */}
+            <div className="border border-danger/40 rounded p-3 space-y-2" style={{ boxShadow: '3px 3px 0px var(--color-danger)' }}>
+              <p className="text-[11px] font-mono font-bold text-danger uppercase tracking-widest">Danger zone</p>
+              <p className="text-[12px] text-text-muted">Clears all local session data (server URL, name, API key). You will need to reconnect.</p>
+              <button
+                onClick={() => {
+                  localStorage.clear()
+                  setMemberName(''); setServerUrl('http://localhost:8001')
+                  setClient(null); setShowSettings(false); setShowSetup(true)
+                }}
+                className="btn-riso btn-riso-danger w-full text-[13px] py-2 rounded">
+                Disconnect &amp; reset
+              </button>
+            </div>
+
           </div>
         </div>
       </div>
@@ -353,6 +458,7 @@ function App() {
       memberName={memberName}
       apiKey={apiKey}
       currentMemberId={memberId}
+      syncInterval={syncInterval}
       onSettings={() => setShowSettings(true)}
     />
   )
