@@ -203,3 +203,26 @@ export interface SyncResult {
   done: number
   errors: Array<{ path: string; error: string }>
 }
+
+export interface PullSessionFile {
+  file_path: string
+  pre_version: number
+  new_version: number
+}
+
+export interface PullSession {
+  id: number
+  project_id: number
+  member_id: number
+  member_name: string
+  member_color?: string
+  file_count: number
+  files: PullSessionFile[]
+  created_at: string
+}
+
+export interface PullRevertResult {
+  reverted: string[]
+  skipped: Array<{ path: string; reason: string }>
+  errors: Array<{ path: string; error: string }>
+}

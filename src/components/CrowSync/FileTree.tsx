@@ -302,10 +302,10 @@ export function FileTree({
               key={item.label}
               onClick={() => { item.action(); setContextMenu(null) }}
               disabled={!isOnline}
-              className={`w-full text-left px-3 py-1.5 text-[14px] disabled:opacity-30 transition-colors ${
+              className={`w-full text-left px-3 py-1.5 text-[14px] disabled:opacity-30 transition-colors hover:bg-surface-3 ${
                 item.danger
-                  ? 'text-danger hover:bg-danger/10'
-                  : 'text-text-secondary hover:bg-surface-3 hover:text-text-primary'
+                  ? 'text-danger hover:bg-danger/10 hover:text-danger'
+                  : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               {item.label}

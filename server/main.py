@@ -208,6 +208,11 @@ class FileRevertRequest(BaseModel):
     path: str
     version: int
 
+
+class PullSessionCreate(BaseModel):
+    files: list[dict]  # [{path, pre_version, new_version}]
+
+
 class PathRequest(BaseModel):
     path: str
 
@@ -1173,6 +1178,108 @@ async def revert_file(
 
     return updated
 
+
+@app.post("/projects/{project_id}/pull-sessions")
+async def create_pull_session_endpoint(
+    project_id: int,
+    body: PullSessionCreate,
+    member: dict = Depends(get_current_member),
+):
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not body.files:
+        raise HTTPException(400, "No files provided")
+    session_id = storage.create_pull_session(project_id, member["id"], body.files)
+    return {"id": session_id}
+
+
+@app.get("/projects/{project_id}/pull-sessions")
+async def list_pull_sessions_endpoint(
+    project_id: int,
+    limit: int = 20,
+    member: dict = Depends(get_current_member),
+):
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return storage.list_pull_sessions(project_id, limit)
+
+
+@app.post("/projects/{project_id}/pull-sessions/{session_id}/revert")
+async def revert_pull_session_endpoint(
+    project_id: int,
+    session_id: int,
+    member: dict = Depends(get_current_member),
+):
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    session = storage.get_pull_session(session_id)
+    if not session or session["project_id"] != project_id:
+        raise HTTPException(404, "Pull session not found")
+
+    reverted: list[str] = []
+    skipped: list[dict] = []
+    errors: list[dict] = []
+
+    for f in session["files"]:
+        path = normalize_rel_path(f["file_path"])
+        if f["pre_version"] == 0:
+            skipped.append({"path": path, "reason": "new file — no prior version to restore"})
+            continue
+        file_record = storage.get_file_by_path(project_id, path)
+        if not file_record:
+            errors.append({"path": path, "error": "file not found on server"})
+            continue
+        if file_record["locked_by_id"] and file_record["locked_by_id"] != member["id"]:
+            locker = storage.get_member(file_record["locked_by_id"])
+            skipped.append({"path": path, "reason": f"locked by {locker['name'] if locker else 'another member'}"})
+            continue
+        target = storage.get_version(file_record["id"], f["pre_version"])
+        if not target:
+            errors.append({"path": path, "error": f"version {f['pre_version']} not found"})
+            continue
+        src_path = file_manager.get_file_path(get_storage_root(), project_id, target["storage_filename"])
+        if not src_path.exists():
+            errors.append({"path": path, "error": "source blob missing on disk"})
+            continue
+        new_version_num = file_record["current_version"] + 1
+        original_name = path.split("/")[-1] if "/" in path else path
+        new_filename = file_manager.make_storage_filename(file_record["id"], new_version_num, original_name)
+        new_blob_path = file_manager.get_storage_dir(get_storage_root(), project_id) / new_filename
+        try:
+            await asyncio.to_thread(shutil.copy2, str(src_path), str(new_blob_path))
+            updated = storage.commit_new_version(
+                file_id=file_record["id"],
+                expected_current_version=file_record["current_version"],
+                new_version=new_version_num,
+                size_bytes=target["size_bytes"],
+                checksum=target["checksum"],
+                author_id=member["id"],
+                message=f"Reverted to v{f['pre_version']} (pull revert)",
+                storage_filename=new_filename,
+                locker_member_id=member["id"],
+            )
+            if updated is None:
+                new_blob_path.unlink(missing_ok=True)
+                errors.append({"path": path, "error": "concurrent modification — retry"})
+            else:
+                storage.create_activity(
+                    project_id, member["id"], file_record["id"], "revert", path,
+                    new_version_num, f"{member['name']} reverted to v{f['pre_version']} via pull revert",
+                )
+                reverted.append(path)
+        except Exception as exc:
+            new_blob_path.unlink(missing_ok=True)
+            errors.append({"path": path, "error": str(exc)})
+
+    if reverted:
+        await ws_manager.broadcast(project_id, "reverted", {
+            "paths": reverted, "member": member["name"], "session_id": session_id,
+        }, exclude_member=member["id"])
+
+    return {"reverted": reverted, "skipped": skipped, "errors": errors}
 
 
 @app.get("/projects/{project_id}/files/versions")

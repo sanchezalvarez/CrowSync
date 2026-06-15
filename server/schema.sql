@@ -80,6 +80,22 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS pull_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  file_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pull_session_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL REFERENCES pull_sessions(id) ON DELETE CASCADE,
+  file_path TEXT NOT NULL,
+  pre_version INTEGER NOT NULL DEFAULT 0,
+  new_version INTEGER NOT NULL
+);
+
 INSERT OR IGNORE INTO settings VALUES ('server_version', '0.1.0');
 INSERT OR IGNORE INTO settings VALUES ('storage_root', './storage');
 INSERT OR IGNORE INTO settings VALUES ('max_file_size_mb', '2048');
@@ -92,3 +108,5 @@ CREATE INDEX IF NOT EXISTS idx_versions_file ON versions(file_id);
 CREATE INDEX IF NOT EXISTS idx_activity_project ON activity(project_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at);
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_updated ON upload_sessions(updated_at);
+CREATE INDEX IF NOT EXISTS idx_pull_sessions_project ON pull_sessions(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_pull_session_files_session ON pull_session_files(session_id);

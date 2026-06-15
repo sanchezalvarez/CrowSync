@@ -52,12 +52,7 @@ export function ConflictDialog({ conflict, onCancel, onDownloadTheirs, onForceUp
             Cancel
           </button>
           <button onClick={onDownloadTheirs}
-            className="btn-riso flex-1 text-[12px] font-medium py-2 rounded text-pull"
-            style={{
-              backgroundColor: 'var(--color-pull-muted)',
-              borderColor: 'var(--color-pull)',
-              boxShadow: '3px 3px 0px var(--color-pull)',
-            }}>
+            className="btn-riso btn-riso-pull flex-1 text-[12px] font-medium py-2 rounded">
             Download theirs
           </button>
           <button onClick={onForceUpload}

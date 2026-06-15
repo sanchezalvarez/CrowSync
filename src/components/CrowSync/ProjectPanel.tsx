@@ -46,7 +46,7 @@ export function ProjectPanel({ projects, selectedId, onSelect, onCreate, onDelet
         <button
           onClick={() => setShowNew(true)}
           title="New project"
-          className="w-5 h-5 flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent-muted rounded transition-all hover:scale-110 active:scale-95 text-sm font-bold"
+          className="btn-riso btn-riso-secondary w-5 h-5 px-0 text-sm font-bold rounded"
         >
           +
         </button>
