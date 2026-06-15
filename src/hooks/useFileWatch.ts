@@ -111,7 +111,9 @@ export function useFileWatch(
       return
     }
     compare()
-    intervalRef.current = setInterval(compare, syncInterval)
+    if (syncInterval > 0) {
+      intervalRef.current = setInterval(compare, syncInterval)
+    }
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)

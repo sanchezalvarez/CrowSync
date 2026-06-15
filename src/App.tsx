@@ -33,9 +33,10 @@ function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     (localStorage.getItem('crowsync_theme') as 'light' | 'dark') || 'light'
   )
-  const [syncInterval, setSyncInterval] = useState<number>(() =>
-    Number(localStorage.getItem('crowsync_sync_interval') || '5000')
-  )
+  const [syncInterval, setSyncInterval] = useState<number>(() => {
+    const stored = localStorage.getItem('crowsync_sync_interval')
+    return stored !== null ? Number(stored) : 5000
+  })
 
   // Form state for settings (client prefs)
   const [formTheme, setFormTheme] = useState<'light' | 'dark'>(theme)
@@ -158,7 +159,7 @@ function App() {
     // Save client-side preferences
     localStorage.setItem('crowsync_theme', formTheme)
     setTheme(formTheme)
-    const interval = Number(formSyncInterval) || 5000
+    const interval = Number(formSyncInterval)
     localStorage.setItem('crowsync_sync_interval', String(interval))
     setSyncInterval(interval)
     if (formSettingsAdminToken.trim()) {
@@ -312,19 +313,24 @@ function App() {
                 <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Poll interval</label>
                 <div className="flex gap-1.5">
                   {[
-                    { label: '1s', value: '1000' },
                     { label: '5s', value: '5000' },
                     { label: '15s', value: '15000' },
                     { label: '30s', value: '30000' },
+                    { label: '60s', value: '60000' },
+                    { label: 'Manual', value: '0' },
                   ].map(opt => (
                     <button key={opt.value}
                       onClick={() => setFormSyncInterval(opt.value)}
-                      className={`btn-riso flex-1 text-[13px] py-1.5 rounded ${formSyncInterval === opt.value ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
+                      className={`btn-riso flex-1 text-[12px] py-1.5 rounded ${formSyncInterval === opt.value ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
                       {opt.label}
                     </button>
                   ))}
                 </div>
-                <p className="text-[12px] text-text-ghost mt-1">How often the desktop app checks for changes</p>
+                <p className="text-[12px] text-text-ghost mt-1">
+                  {formSyncInterval === '0'
+                    ? 'Auto-scan off — scan runs only when you click Sync'
+                    : 'How often the desktop app scans and hashes files on disk'}
+                </p>
               </div>
             </div>
 
