@@ -31,8 +31,7 @@ pub struct ManifestEntry {
 /// (a growing file count + the file currently being hashed) instead of an
 /// indefinite spinner. Sent over a `tauri::ipc::Channel`, throttled to one
 /// message every `PROGRESS_EVERY` files plus a final exact-count message.
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize)]
 pub struct ScanProgress {
     pub scanned: usize,
     pub current: String,

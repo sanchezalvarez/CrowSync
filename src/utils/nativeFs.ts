@@ -7,13 +7,17 @@
  */
 import type { ApiBody, ManifestEntry } from '../types'
 
-async function getInvoke() {
+/** The Tauri core module (invoke + Channel), or null in browser dev mode. */
+async function getCore() {
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return invoke
+    return await import('@tauri-apps/api/core')
   } catch {
     return null
   }
+}
+
+async function getInvoke() {
+  return (await getCore())?.invoke ?? null
 }
 
 export function isNativeAvailable(): boolean {
@@ -39,8 +43,8 @@ export async function scanDir(
   ignorePatterns: string[],
   onProgress?: (p: ScanProgress) => void,
 ): Promise<ManifestEntry[]> {
-  // Channel lives in the same module as invoke, so load core directly here.
-  const core = await import('@tauri-apps/api/core').catch(() => null)
+  // scanDir needs Channel (not just invoke), so it takes the whole core module.
+  const core = await getCore()
   if (!core?.invoke) throw new Error('Native scan unavailable (browser mode)')
   // The Rust command always expects the channel; without a callback its
   // messages are simply dropped.

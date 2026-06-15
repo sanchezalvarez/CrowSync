@@ -71,23 +71,26 @@ function App() {
     }
   }, [serverUrl, memberName, apiKey, handleUnauthorized])
 
+  // Sync the settings form from live client-side values when the panel opens.
   useEffect(() => {
-    if (showSettings) {
-      // sync client-side form state from live values
-      setFormTheme(theme)
-      setFormSyncInterval(String(syncInterval))
-      setFormSettingsAdminToken(localStorage.getItem('crowsync_admin_token') || '')
-    }
-    if (showSettings && client) {
-      client.getSettings().then(s => {
-        setFormStorageRoot(s.storage_root)
-        setFormAutoUnlock(s.auto_unlock_hours)
-        setFormMaxFileSize(s.max_file_size_mb)
-      }).catch(() => {})
-      client.getIgnorePatterns().then(setIgnoreRules).catch(() => {})
-      client.getUnityIgnorePatterns().then(setUnityRules).catch(() => {})
-    }
-  }, [showSettings, client, theme, syncInterval])
+    if (!showSettings) return
+    setFormTheme(theme)
+    setFormSyncInterval(String(syncInterval))
+    setFormSettingsAdminToken(localStorage.getItem('crowsync_admin_token') || '')
+  }, [showSettings, theme, syncInterval])
+
+  // Fetch server-side settings + ignore rules when the panel opens. Kept separate
+  // from the form-sync above so changing theme/interval doesn't refetch them.
+  useEffect(() => {
+    if (!showSettings || !client) return
+    client.getSettings().then(s => {
+      setFormStorageRoot(s.storage_root)
+      setFormAutoUnlock(s.auto_unlock_hours)
+      setFormMaxFileSize(s.max_file_size_mb)
+    }).catch(() => {})
+    client.getIgnorePatterns().then(setIgnoreRules).catch(() => {})
+    client.getUnityIgnorePatterns().then(setUnityRules).catch(() => {})
+  }, [showSettings, client])
 
   const testConnection = useCallback(async () => {
     setTestResult('testing')
@@ -102,16 +105,20 @@ function App() {
     }
   }, [formUrl, formName])
 
-  // Probe the server once the setup screen opens (or the URL changes) so the
-  // admin-token field can hide itself in open-LAN / bootstrap mode.
+  // Probe the server once the setup screen opens (or the URL settles) so the
+  // admin-token field can hide itself in open-LAN / bootstrap mode. Debounced so
+  // typing the URL doesn't fire a request per keystroke; the member name is
+  // irrelevant to /health, so it's not a dependency.
   useEffect(() => {
     if (!showSetup || !formUrl) return
     let cancelled = false
-    new CrowSyncClient(formUrl, formName).health()
-      .then(h => { if (!cancelled) setOpenRegistration(!!h.open_registration) })
-      .catch(() => { if (!cancelled) setOpenRegistration(null) })
-    return () => { cancelled = true }
-  }, [showSetup, formUrl, formName])
+    const t = setTimeout(() => {
+      new CrowSyncClient(formUrl, '').health()
+        .then(h => { if (!cancelled) setOpenRegistration(!!h.open_registration) })
+        .catch(() => { if (!cancelled) setOpenRegistration(null) })
+    }, 400)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [showSetup, formUrl])
 
   // Commit the connection (server + name + key) to localStorage and app state.
   const commitSession = useCallback((url: string, name: string, key: string, id: number | null) => {

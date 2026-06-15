@@ -95,7 +95,6 @@ export interface Activity {
   project_id: number
   member_id: number | null
   member_name?: string
-  member_color?: string
   file_id: number | null
   action: string
   file_path: string
@@ -215,7 +214,6 @@ export interface PullSession {
   project_id: number
   member_id: number
   member_name: string
-  member_color?: string
   file_count: number
   files: PullSessionFile[]
   created_at: string

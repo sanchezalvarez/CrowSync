@@ -4,7 +4,8 @@ import type { CrowSyncClient } from '../api/client'
 import { getLocalPath, joinLocal } from '../utils/localPath'
 import { getSyncState, setSyncBase, removeSyncBase } from '../utils/syncState'
 import { newUploadId, getPendingUpload, setPendingUpload, clearPendingUpload } from '../utils/uploadState'
-import { isNativeAvailable, scanDir, nativeUpload, nativeDownload, nativeDeleteLocal, detectUnity } from '../utils/nativeFs'
+import { isNativeAvailable, scanDir, nativeUpload, nativeDownload, nativeDeleteLocal } from '../utils/nativeFs'
+import { resolveScanPatterns } from '../utils/scanPatterns'
 
 const DEFAULT_POLL_INTERVAL = 5000
 
@@ -33,36 +34,12 @@ export function useFileWatch(
   const [lastScan, setLastScan] = useState<Date | null>(null)
   const [isUnity, setIsUnity] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const ignoreRef = useRef<string[] | null>(null)
-  const unityIgnoreRef = useRef<string[] | null>(null)
   // Guards against overlapping scans: a poll tick (every 5s) must not kick off a new
   // native MD5 scan while the previous one is still running. On a large project a scan
   // can take far longer than the poll interval, and stacking concurrent scans of the
   // same GB folder thrashes the disk so nothing ever finishes.
   const runningRef = useRef(false)
   const native = isNativeAvailable()
-
-  const getIgnore = useCallback(async () => {
-    if (ignoreRef.current) return ignoreRef.current
-    try {
-      const patterns = await client!.getIgnorePatterns()
-      ignoreRef.current = patterns
-      return patterns
-    } catch {
-      return []
-    }
-  }, [client])
-
-  const getUnityIgnore = useCallback(async () => {
-    if (unityIgnoreRef.current) return unityIgnoreRef.current
-    try {
-      const patterns = await client!.getUnityIgnorePatterns()
-      unityIgnoreRef.current = patterns
-      return patterns
-    } catch {
-      return []
-    }
-  }, [client])
 
   const compare = useCallback(async () => {
     if (!client || !projectId) {
@@ -81,10 +58,8 @@ export function useFileWatch(
     setLoading(true)
     try {
       // Unity projects get extra ignore rules (Library/, *.csproj…) applied to the scan.
-      const unity = await detectUnity(localPath)
+      const { patterns, isUnity: unity } = await resolveScanPatterns(client, localPath)
       setIsUnity(unity)
-      let patterns = await getIgnore()
-      if (unity) patterns = [...patterns, ...await getUnityIgnore()]
       const scanned = await scanDir(localPath, patterns)
       // Attach each file's sync base so the server can attribute mismatches (K1).
       const base = getSyncState(projectId)
@@ -108,7 +83,7 @@ export function useFileWatch(
       runningRef.current = false
       setLoading(false)
     }
-  }, [client, projectId, native, getIgnore, getUnityIgnore])
+  }, [client, projectId, native])
 
   // Auto-poll when enabled
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, SyncEvent, PullSession } from '../../types'
 
 interface ActivityFeedProps {
@@ -153,12 +153,13 @@ export function ActivityFeed({ activities, events, pullSessions = [], onRevertPu
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }, [activities.length, events.length, pullSessions.length])
 
-  // Build a merged, sorted feed.
-  const feed: FeedItem[] = [
+  // Build a merged, sorted feed. Memoized so the expand toggle (and unrelated
+  // parent re-renders) don't re-spread + re-sort the whole log every render.
+  const feed: FeedItem[] = useMemo(() => [
     ...events.map(e => ({ kind: 'ws' as const, at: e.at, data: e })),
     ...activities.map(a => ({ kind: 'activity' as const, at: a.created_at, data: a })),
     ...pullSessions.map(ps => ({ kind: 'pull' as const, at: ps.created_at, data: ps })),
-  ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)), [events, activities, pullSessions])
 
   const total = events.length + activities.length + pullSessions.length
 
@@ -180,7 +181,7 @@ export function ActivityFeed({ activities, events, pullSessions = [], onRevertPu
         ) : (
           feed.map((item, i) => {
             if (item.kind === 'ws') {
-              const e = item.data as SyncEvent
+              const e = item.data
               return (
                 <LogRow
                   key={`ws-${i}`} live action={e.event} member={e.data.member || 'Someone'}
@@ -189,7 +190,7 @@ export function ActivityFeed({ activities, events, pullSessions = [], onRevertPu
               )
             }
             if (item.kind === 'activity') {
-              const a = item.data as Activity
+              const a = item.data
               return (
                 <LogRow
                   key={`act-${a.id}`} action={a.action} member={a.member_name || 'System'}
@@ -198,7 +199,7 @@ export function ActivityFeed({ activities, events, pullSessions = [], onRevertPu
               )
             }
             // kind === 'pull'
-            const ps = item.data as PullSession
+            const ps = item.data
             return (
               <PullSessionRow
                 key={`pull-${ps.id}`}

@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react'
 import { pickFolder } from '../../utils/folderPicker'
 import { setLocalPath, joinLocal } from '../../utils/localPath'
 import { setSyncBase } from '../../utils/syncState'
-import { isNativeAvailable, scanDir, nativeUpload, detectUnity } from '../../utils/nativeFs'
+import { isNativeAvailable, scanDir, nativeUpload } from '../../utils/nativeFs'
 import type { ScanProgress } from '../../utils/nativeFs'
+import { resolveScanPatterns } from '../../utils/scanPatterns'
 import type { CrowSyncClient } from '../../api/client'
 import type { Project, ManifestEntry } from '../../types'
 
@@ -66,15 +67,9 @@ export function InitProjectDialog({
     setScanProgress(null)
     setPhase('scanning')
     try {
-      let patterns = await client.getIgnorePatterns().catch(() => [])
-      // Unity projects MUST exclude Library/, Temp/, *.csproj… or the scan crawls
-      // through gigabytes of import cache and effectively never finishes (mirrors
-      // the same merge useFileWatch does for the background poll).
-      const unity = await detectUnity(path).catch(() => false)
-      if (unity) {
-        const unityPatterns = await client.getUnityIgnorePatterns().catch(() => [])
-        patterns = [...patterns, ...unityPatterns]
-      }
+      // Resolve ignore patterns (incl. Unity Library/, *.csproj…) via the shared
+      // helper so the import scan stays in sync with the background poll's scan.
+      const { patterns } = await resolveScanPatterns(client, path)
       const found = await scanDir(path, patterns, p => setScanProgress(p))
       setManifest(found)
       setPhase('confirm')

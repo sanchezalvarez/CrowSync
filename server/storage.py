@@ -545,17 +545,25 @@ def list_pull_sessions(project_id: int, limit: int = 20) -> list[dict]:
            ORDER BY ps.created_at DESC LIMIT ?""",
         (project_id, limit),
     ).fetchall()
-    result = []
-    for row in rows:
-        files = conn.execute(
-            "SELECT file_path, pre_version, new_version FROM pull_session_files WHERE session_id = ? ORDER BY id",
-            (row["id"],),
+    sessions = [dict(r) for r in rows]
+    ids = [s["id"] for s in sessions]
+    # Fetch every session's files in one query (IN-list) instead of one query
+    # per session, then group in Python — avoids the N+1 round-trips.
+    files_by_session: dict[int, list[dict]] = {sid: [] for sid in ids}
+    if ids:
+        placeholders = ",".join("?" * len(ids))
+        file_rows = conn.execute(
+            f"""SELECT session_id, file_path, pre_version, new_version
+                FROM pull_session_files WHERE session_id IN ({placeholders}) ORDER BY id""",
+            ids,
         ).fetchall()
-        d = dict(row)
-        d["files"] = [dict(f) for f in files]
-        result.append(d)
+        for fr in file_rows:
+            fd = dict(fr)
+            files_by_session[fd.pop("session_id")].append(fd)
+    for s in sessions:
+        s["files"] = files_by_session[s["id"]]
     conn.close()
-    return result
+    return sessions
 
 
 def get_pull_session(session_id: int) -> dict | None:

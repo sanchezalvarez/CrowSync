@@ -1111,6 +1111,57 @@ async def unlock_file(
     return updated
 
 
+class _RevertConflict(Exception):
+    """Raised when commit_new_version returns None (concurrent modification)."""
+
+
+async def _commit_revert(project_id, member, file_record, path, target, commit_message, activity_detail):
+    """Shared core of both revert paths: copy the `target` version's blob under a
+    new version and atomically commit it (V2), off the event loop (M1), then log
+    the revert activity. The caller does the lock check + target-version lookup
+    first, since those failures surface differently (single-file raises HTTP, the
+    pull-session batch collects per-file reasons).
+
+    Raises FileNotFoundError if the source blob is missing on disk, _RevertConflict
+    on a concurrent-modification race; re-raises any commit failure. Returns the
+    updated file record.
+    """
+    new_version_num = file_record["current_version"] + 1
+    src_path = file_manager.get_file_path(get_storage_root(), project_id, target["storage_filename"])
+    if not src_path.exists():
+        raise FileNotFoundError(path)
+
+    original_name = path.split("/")[-1] if "/" in path else path
+    new_filename = file_manager.make_storage_filename(file_record["id"], new_version_num, original_name)
+    new_blob_path = file_manager.get_storage_dir(get_storage_root(), project_id) / new_filename
+    try:
+        await asyncio.to_thread(shutil.copy2, str(src_path), str(new_blob_path))
+        updated = storage.commit_new_version(
+            file_id=file_record["id"],
+            expected_current_version=file_record["current_version"],
+            new_version=new_version_num,
+            size_bytes=target["size_bytes"],
+            checksum=target["checksum"],
+            author_id=member["id"],
+            message=commit_message,
+            storage_filename=new_filename,
+            locker_member_id=member["id"],
+        )
+    except Exception:
+        new_blob_path.unlink(missing_ok=True)
+        raise
+
+    if updated is None:
+        new_blob_path.unlink(missing_ok=True)
+        raise _RevertConflict()
+
+    storage.create_activity(
+        project_id, member["id"], file_record["id"], "revert", path,
+        new_version_num, activity_detail,
+    )
+    return updated
+
+
 @app.post("/projects/{project_id}/files/revert")
 async def revert_file(
     project_id: int,
@@ -1135,50 +1186,19 @@ async def revert_file(
             "locked_at": file_record["locked_at"],
         })
 
-    new_version_num = file_record["current_version"] + 1
-    src_path = file_manager.get_file_path(get_storage_root(), project_id, target_version["storage_filename"])
-    if not src_path.exists():
-        raise HTTPException(404, "Target version file not found on disk")
-
-    # Copy the target blob under the new version's filename.
-    original_name = body.path.split("/")[-1] if "/" in body.path else body.path
-    new_filename = file_manager.make_storage_filename(file_record["id"], new_version_num, original_name)
-    dest_dir = file_manager.get_storage_dir(get_storage_root(), project_id)
-    new_blob_path = dest_dir / new_filename
-    # Off-load the blob copy to a thread — a multi-GB revert must not block the event
-    # loop (M1; mirrors the streaming/to_thread handling on the upload path).
-    await asyncio.to_thread(shutil.copy2, str(src_path), str(new_blob_path))
-
-    # Atomic version commit (V2): same path as upload_file — asserts no foreign lock
-    # and that current_version still matches, replacing the non-atomic
-    # create_version + update_file that could race with a concurrent upload.
     try:
-        updated = storage.commit_new_version(
-            file_id=file_record["id"],
-            expected_current_version=file_record["current_version"],
-            new_version=new_version_num,
-            size_bytes=target_version["size_bytes"],
-            checksum=target_version["checksum"],
-            author_id=member["id"],
-            message=f"Reverted to v{body.version}",
-            storage_filename=new_filename,
-            locker_member_id=member["id"],
+        updated = await _commit_revert(
+            project_id, member, file_record, body.path, target_version,
+            commit_message=f"Reverted to v{body.version}",
+            activity_detail=f"{member['name']} reverted to v{body.version}",
         )
-    except Exception:
-        new_blob_path.unlink(missing_ok=True)
-        raise
-
-    if updated is None:
-        new_blob_path.unlink(missing_ok=True)
+    except FileNotFoundError:
+        raise HTTPException(404, "Target version file not found on disk")
+    except _RevertConflict:
         raise HTTPException(409, detail={
             "conflict": True,
             "message": "Concurrent modification — refresh and retry",
         })
-
-    storage.create_activity(
-        project_id, member["id"], file_record["id"], "revert", body.path,
-        new_version_num, f"{member['name']} reverted to v{body.version}",
-    )
 
     await ws_manager.broadcast(project_id, "reverted", {
         "path": body.path, "version": body.version, "member": member["name"],
@@ -1248,38 +1268,18 @@ async def revert_pull_session_endpoint(
         if not target:
             errors.append({"path": path, "error": f"version {f['pre_version']} not found"})
             continue
-        src_path = file_manager.get_file_path(get_storage_root(), project_id, target["storage_filename"])
-        if not src_path.exists():
-            errors.append({"path": path, "error": "source blob missing on disk"})
-            continue
-        new_version_num = file_record["current_version"] + 1
-        original_name = path.split("/")[-1] if "/" in path else path
-        new_filename = file_manager.make_storage_filename(file_record["id"], new_version_num, original_name)
-        new_blob_path = file_manager.get_storage_dir(get_storage_root(), project_id) / new_filename
         try:
-            await asyncio.to_thread(shutil.copy2, str(src_path), str(new_blob_path))
-            updated = storage.commit_new_version(
-                file_id=file_record["id"],
-                expected_current_version=file_record["current_version"],
-                new_version=new_version_num,
-                size_bytes=target["size_bytes"],
-                checksum=target["checksum"],
-                author_id=member["id"],
-                message=f"Reverted to v{f['pre_version']} (pull revert)",
-                storage_filename=new_filename,
-                locker_member_id=member["id"],
+            await _commit_revert(
+                project_id, member, file_record, path, target,
+                commit_message=f"Reverted to v{f['pre_version']} (pull revert)",
+                activity_detail=f"{member['name']} reverted to v{f['pre_version']} via pull revert",
             )
-            if updated is None:
-                new_blob_path.unlink(missing_ok=True)
-                errors.append({"path": path, "error": "concurrent modification — retry"})
-            else:
-                storage.create_activity(
-                    project_id, member["id"], file_record["id"], "revert", path,
-                    new_version_num, f"{member['name']} reverted to v{f['pre_version']} via pull revert",
-                )
-                reverted.append(path)
+            reverted.append(path)
+        except FileNotFoundError:
+            errors.append({"path": path, "error": "source blob missing on disk"})
+        except _RevertConflict:
+            errors.append({"path": path, "error": "concurrent modification — retry"})
         except Exception as exc:
-            new_blob_path.unlink(missing_ok=True)
             errors.append({"path": path, "error": str(exc)})
 
     if reverted:
