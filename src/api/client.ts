@@ -51,7 +51,7 @@ export class CrowSyncClient {
   }
 
   // Health
-  async health(): Promise<{ status: string; version: string; projects: number; members: number }> {
+  async health(): Promise<{ status: string; version: string; projects: number; members: number; open_registration?: boolean }> {
     const res = await fetch(`${this.baseUrl}/health`)
     if (!res.ok) throw new Error('Server unreachable')
     return res.json()

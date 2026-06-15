@@ -8,6 +8,7 @@ CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 
 DEFAULT_IGNORE_PATTERNS = [
     "*.tmp", "*.temp", "*.log",
+    ".git/", ".svn/", ".hg/",           # VCS metadata (can be huge)
     "Temp/", "Library/", "Logs/",      # Unity
     ".godot/", "export/",               # Godot
     "Binaries/", "Build/", "Saved/",    # Unreal

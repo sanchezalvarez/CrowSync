@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react'
 import { pickFolder } from '../../utils/folderPicker'
 import { setLocalPath, joinLocal } from '../../utils/localPath'
 import { setSyncBase } from '../../utils/syncState'
-import { isNativeAvailable, scanDir, nativeUpload } from '../../utils/nativeFs'
+import { isNativeAvailable, scanDir, nativeUpload, detectUnity } from '../../utils/nativeFs'
+import type { ScanProgress } from '../../utils/nativeFs'
 import type { CrowSyncClient } from '../../api/client'
 import type { Project, ManifestEntry } from '../../types'
 
@@ -38,6 +39,7 @@ export function InitProjectDialog({
   const [errorMessage, setErrorMessage] = useState('')
   const [failedFiles, setFailedFiles] = useState<string[]>([])
   const [progress, setProgress] = useState(0)
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
 
   const totalSize = manifest.reduce((sum, f) => sum + f.size_bytes, 0)
 
@@ -49,6 +51,7 @@ export function InitProjectDialog({
     setErrorMessage('')
     setFailedFiles([])
     setProgress(0)
+    setScanProgress(null)
   }, [])
 
   const handleScan = useCallback(async () => {
@@ -60,10 +63,19 @@ export function InitProjectDialog({
       return
     }
     setLocalPath(project.id, path)
+    setScanProgress(null)
     setPhase('scanning')
     try {
-      const patterns = await client.getIgnorePatterns().catch(() => [])
-      const found = await scanDir(path, patterns)
+      let patterns = await client.getIgnorePatterns().catch(() => [])
+      // Unity projects MUST exclude Library/, Temp/, *.csproj… or the scan crawls
+      // through gigabytes of import cache and effectively never finishes (mirrors
+      // the same merge useFileWatch does for the background poll).
+      const unity = await detectUnity(path).catch(() => false)
+      if (unity) {
+        const unityPatterns = await client.getUnityIgnorePatterns().catch(() => [])
+        patterns = [...patterns, ...unityPatterns]
+      }
+      const found = await scanDir(path, patterns, p => setScanProgress(p))
       setManifest(found)
       setPhase('confirm')
     } catch (err) {
@@ -148,7 +160,14 @@ export function InitProjectDialog({
           {phase === 'scanning' && (
             <div className="py-8 text-center">
               <div className="animate-spin text-xl inline-block text-accent">{'↻'}</div>
-              <p className="text-[14px] text-text-secondary mt-2 font-mono">Scanning folder...</p>
+              <p className="text-[14px] text-text-secondary mt-2 font-mono">
+                Scanning folder... {scanProgress ? `${scanProgress.scanned} files` : ''}
+              </p>
+              {scanProgress?.current && (
+                <p className="text-[12px] text-text-ghost mt-1 font-mono truncate px-4">
+                  {scanProgress.current}
+                </p>
+              )}
             </div>
           )}
 

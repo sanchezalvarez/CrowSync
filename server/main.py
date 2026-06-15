@@ -32,6 +32,10 @@ DB_PATH = os.getenv("CROWSYNC_DB_PATH", "./crowsync.db")
 STORAGE_ROOT = os.getenv("CROWSYNC_STORAGE_ROOT", "./storage")
 PORT = int(os.getenv("CROWSYNC_PORT", "8001"))
 ADMIN_TOKEN = os.getenv("CROWSYNC_ADMIN_TOKEN", "")
+# Trusted-LAN mode: when enabled, anyone reachable on the network may self-register
+# (or re-register to recover a lost key) with just a name — no admin token. Intended
+# for a local game-dev team behind a firewall, NOT for an internet-exposed server.
+OPEN_REGISTRATION = os.getenv("CROWSYNC_OPEN_REGISTRATION", "").strip().lower() in ("1", "true", "yes", "on")
 
 ws_manager = WebSocketManager()
 
@@ -112,6 +116,8 @@ async def require_admin_or_bootstrap(
     members = storage.list_members()
     if not members:
         return  # bootstrap mode — first member self-registers
+    if OPEN_REGISTRATION:
+        return  # trusted-LAN mode — anyone may register / recover a key without a token
     if not ADMIN_TOKEN:
         raise HTTPException(
             403,
@@ -247,6 +253,8 @@ async def health():
         "version": storage.get_setting("server_version", "0.1.0"),
         "projects": len(projects),
         "members": len(members),
+        # Lets the setup UI hide the admin-token field and just ask for a name.
+        "open_registration": OPEN_REGISTRATION or not members,
     }
 
 

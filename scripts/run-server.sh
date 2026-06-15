@@ -9,6 +9,7 @@
 #   CROWSYNC_DB_PATH=./crowsync.db
 #   CROWSYNC_STORAGE_ROOT=./storage
 #   CROWSYNC_ADMIN_TOKEN=        # required to add members after the first one
+#   CROWSYNC_OPEN_REGISTRATION=  # "1" = trusted-LAN mode, anyone registers by name
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

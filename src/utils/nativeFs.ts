@@ -28,10 +28,25 @@ export interface TransferOutcome {
   body?: ApiBody
 }
 
-export async function scanDir(root: string, ignorePatterns: string[]): Promise<ManifestEntry[]> {
-  const invoke = await getInvoke()
-  if (!invoke) throw new Error('Native scan unavailable (browser mode)')
-  return invoke('scan_dir', { root, ignorePatterns })
+/** Live scan progress streamed from the native scan_dir over a Tauri Channel. */
+export interface ScanProgress {
+  scanned: number
+  current: string
+}
+
+export async function scanDir(
+  root: string,
+  ignorePatterns: string[],
+  onProgress?: (p: ScanProgress) => void,
+): Promise<ManifestEntry[]> {
+  // Channel lives in the same module as invoke, so load core directly here.
+  const core = await import('@tauri-apps/api/core').catch(() => null)
+  if (!core) throw new Error('Native scan unavailable (browser mode)')
+  // The Rust command always expects the channel; without a callback its
+  // messages are simply dropped.
+  const channel = new core.Channel<ScanProgress>()
+  if (onProgress) channel.onmessage = onProgress
+  return core.invoke('scan_dir', { root, ignorePatterns, onProgress: channel })
 }
 
 /** True if the local folder is a Unity project (has Assets/ + ProjectSettings/).

@@ -16,6 +16,9 @@ services:
       # Required to register members after the first. Set it in a sibling .env
       # (compose substitutes ${...} from there) or the host environment.
       - CROWSYNC_ADMIN_TOKEN=${CROWSYNC_ADMIN_TOKEN:-}
+      # Open LAN mode — "1" lets anyone register with just a name (no token).
+      # Only for trusted/firewalled networks; never on a public-facing server.
+      - CROWSYNC_OPEN_REGISTRATION=${CROWSYNC_OPEN_REGISTRATION:-}
 volumes:
   crowsync-data:
     driver: local

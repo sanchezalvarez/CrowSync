@@ -16,6 +16,9 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [client, setClient] = useState<CrowSyncClient | null>(null)
   const [testResult, setTestResult] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  // null = unknown yet; true = server lets anyone register with just a name (open LAN /
+  // bootstrap), so we hide the admin-token field. Probed from /health.
+  const [openRegistration, setOpenRegistration] = useState<boolean | null>(null)
 
   const [formUrl, setFormUrl] = useState(serverUrl)
   const [formName, setFormName] = useState(memberName)
@@ -65,12 +68,25 @@ function App() {
     setTestResult('testing')
     try {
       const c = new CrowSyncClient(formUrl, formName)
-      await c.health()
+      const h = await c.health()
+      setOpenRegistration(!!h.open_registration)
       setTestResult('ok')
     } catch {
+      setOpenRegistration(null)
       setTestResult('fail')
     }
   }, [formUrl, formName])
+
+  // Probe the server once the setup screen opens (or the URL changes) so the
+  // admin-token field can hide itself in open-LAN / bootstrap mode.
+  useEffect(() => {
+    if (!showSetup || !formUrl) return
+    let cancelled = false
+    new CrowSyncClient(formUrl, formName).health()
+      .then(h => { if (!cancelled) setOpenRegistration(!!h.open_registration) })
+      .catch(() => { if (!cancelled) setOpenRegistration(null) })
+    return () => { cancelled = true }
+  }, [showSetup, formUrl, formName])
 
   // Commit the connection (server + name + key) to localStorage and app state.
   const commitSession = useCallback((url: string, name: string, key: string, id: number | null) => {
@@ -183,16 +199,22 @@ function App() {
               {testResult === 'fail' && <span className="text-danger text-xs font-mono font-bold">FAIL</span>}
             </div>
 
-            <div>
-              <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Admin token <span className="text-text-ghost normal-case font-normal">— only for new members after the first</span></label>
-              <input
-                type="password" value={formAdminToken}
-                onChange={e => setFormAdminToken(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSetup()}
-                placeholder="Leave empty for the first member"
-                className="input-riso w-full rounded px-3 py-2 text-sm text-text-primary font-mono placeholder-text-ghost"
-              />
-            </div>
+            {openRegistration ? (
+              <p className="text-[13px] text-sync bg-surface-1 border border-sync/30 rounded px-3 py-2">
+                Open LAN mode — just enter a name and connect. No token needed.
+              </p>
+            ) : (
+              <div>
+                <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">Admin token <span className="text-text-ghost normal-case font-normal">— only for new members after the first</span></label>
+                <input
+                  type="password" value={formAdminToken}
+                  onChange={e => setFormAdminToken(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSetup()}
+                  placeholder="Leave empty for the first member"
+                  className="input-riso w-full rounded px-3 py-2 text-sm text-text-primary font-mono placeholder-text-ghost"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest mb-1.5">API key <span className="text-text-ghost normal-case font-normal">— recovery on a new machine</span></label>

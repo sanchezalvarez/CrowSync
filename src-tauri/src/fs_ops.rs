@@ -27,6 +27,17 @@ pub struct ManifestEntry {
     pub checksum: String,
 }
 
+/// Streamed to the frontend during a scan so the UI can show live progress
+/// (a growing file count + the file currently being hashed) instead of an
+/// indefinite spinner. Sent over a `tauri::ipc::Channel`, throttled to one
+/// message every `PROGRESS_EVERY` files plus a final exact-count message.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanProgress {
+    pub scanned: usize,
+    pub current: String,
+}
+
 /// Result of an HTTP transfer. The frontend inspects `status` to distinguish
 /// success from lock (423) / conflict (409) / too-large (413), mirroring the
 /// status-based error handling in `src/api/client.ts`.
@@ -93,7 +104,15 @@ fn md5_file(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn scan_impl(root: PathBuf, mut patterns: Vec<String>) -> Result<Vec<ManifestEntry>, String> {
+/// Emit a progress message every N hashed files — frequent enough to feel live,
+/// sparse enough not to flood the IPC channel on a project with 100k+ files.
+const PROGRESS_EVERY: usize = 64;
+
+fn scan_impl(
+    root: PathBuf,
+    mut patterns: Vec<String>,
+    on_progress: tauri::ipc::Channel<ScanProgress>,
+) -> Result<Vec<ManifestEntry>, String> {
     if !root.is_dir() {
         return Err(format!("Path not accessible: {}", root.display()));
     }
@@ -121,18 +140,34 @@ fn scan_impl(root: PathBuf, mut patterns: Vec<String>) -> Result<Vec<ManifestEnt
         }
         let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
         match md5_file(entry.path()) {
-            Ok(checksum) => out.push(ManifestEntry { path: rel, size_bytes: size, checksum }),
+            Ok(checksum) => {
+                // Throttled live update (first file fires immediately at len()==0).
+                // Ignore the Err — if the frontend listener is gone the scan must
+                // still finish, it just stops reporting.
+                if out.len() % PROGRESS_EVERY == 0 {
+                    let _ = on_progress.send(ScanProgress { scanned: out.len(), current: rel.clone() });
+                }
+                out.push(ManifestEntry { path: rel, size_bytes: size, checksum });
+            }
             Err(_) => continue, // unreadable file (locked by editor etc.) — skip
         }
     }
+    // Final message with the exact total so the UI lands on the real count
+    // (covers projects with fewer than PROGRESS_EVERY files too).
+    let _ = on_progress.send(ScanProgress { scanned: out.len(), current: String::new() });
     Ok(out)
 }
 
 /// Walk a local folder and return a manifest of {path, size_bytes, checksum}.
 /// `ignore_patterns` should come from the server's `GET /ignore-patterns`.
+/// `on_progress` streams live scan progress to the frontend (see `ScanProgress`).
 #[tauri::command]
-pub async fn scan_dir(root: String, ignore_patterns: Vec<String>) -> Result<Vec<ManifestEntry>, String> {
-    tokio::task::spawn_blocking(move || scan_impl(PathBuf::from(root), ignore_patterns))
+pub async fn scan_dir(
+    root: String,
+    ignore_patterns: Vec<String>,
+    on_progress: tauri::ipc::Channel<ScanProgress>,
+) -> Result<Vec<ManifestEntry>, String> {
+    tokio::task::spawn_blocking(move || scan_impl(PathBuf::from(root), ignore_patterns, on_progress))
         .await
         .map_err(|e| e.to_string())?
 }

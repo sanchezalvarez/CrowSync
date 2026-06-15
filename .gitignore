@@ -53,6 +53,10 @@ crowsync.db
 *.db-shm
 storage/
 
+# Test scratch (isolated server runs)
+_test_*/
+_test_*.db
+
 # Env
 .env
 .env.*

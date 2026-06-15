@@ -34,6 +34,11 @@ export function useFileWatch(
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const ignoreRef = useRef<string[] | null>(null)
   const unityIgnoreRef = useRef<string[] | null>(null)
+  // Guards against overlapping scans: a poll tick (every 5s) must not kick off a new
+  // native MD5 scan while the previous one is still running. On a large project a scan
+  // can take far longer than the poll interval, and stacking concurrent scans of the
+  // same GB folder thrashes the disk so nothing ever finishes.
+  const runningRef = useRef(false)
   const native = isNativeAvailable()
 
   const getIgnore = useCallback(async () => {
@@ -69,6 +74,9 @@ export function useFileWatch(
       setComparison(null)
       return
     }
+    // Skip this tick if a scan is already in flight — don't stack concurrent scans.
+    if (runningRef.current) return
+    runningRef.current = true
     setLoading(true)
     try {
       // Unity projects get extra ignore rules (Library/, *.csproj…) applied to the scan.
@@ -96,6 +104,7 @@ export function useFileWatch(
     } catch {
       // scan failed / server unreachable — leave previous comparison untouched
     } finally {
+      runningRef.current = false
       setLoading(false)
     }
   }, [client, projectId, native, getIgnore, getUnityIgnore])
