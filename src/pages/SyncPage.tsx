@@ -61,6 +61,8 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
   const [pushing, setPushing] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [showInit, setShowInit] = useState(false)
+  const [showProjects, setShowProjects] = useState(true)
+  const [showActivity, setShowActivity] = useState(true)
   const { toasts, addToast, removeToast } = useToast()
 
   // Load activities when project changes
@@ -310,6 +312,14 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
           <span className="text-text-primary font-semibold text-sm tracking-wide">CrowSync</span>
         </div>
 
+        <button
+          onClick={() => setShowProjects(p => !p)}
+          className="btn-riso btn-riso-secondary text-[11px] font-mono px-1.5 py-0.5 rounded shrink-0"
+          title={showProjects ? 'Hide projects' : 'Show projects'}
+        >
+          {showProjects ? '‹' : '›'}
+        </button>
+
         {selectedId && (
           <span className="text-text-muted text-xs font-mono">
             / {projects.find(p => p.id === selectedId)?.name}
@@ -398,6 +408,14 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
         <span className="text-[13px] text-text-muted font-mono">{memberName}</span>
 
         <button
+          onClick={() => setShowActivity(a => !a)}
+          className="btn-riso btn-riso-secondary text-[11px] font-mono px-1.5 py-0.5 rounded shrink-0"
+          title={showActivity ? 'Hide activity log' : 'Show activity log'}
+        >
+          {showActivity ? '\u203A' : '\u2039'}
+        </button>
+
+        <button
           onClick={onSettings}
           className="text-text-ghost hover:text-text-secondary transition-colors text-sm leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-surface-3"
           title="Settings"
@@ -420,13 +438,15 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        <ProjectPanel
-          projects={projects}
-          selectedId={selectedId}
-          onSelect={select}
-          onCreate={createProject}
-          onDelete={deleteProject}
-        />
+        {showProjects && (
+          <ProjectPanel
+            projects={projects}
+            selectedId={selectedId}
+            onSelect={select}
+            onCreate={createProject}
+            onDelete={deleteProject}
+          />
+        )}
 
         {selectedId ? (
           files.length === 0 && !comparison ? (
@@ -467,20 +487,22 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
                 currentMemberId={currentMemberId}
                 isOnline={isOnline}
               />
-              <FileDetail
-                file={selectedFile}
-                files={files}
-                currentMemberId={currentMemberId}
-                isOnline={isOnline}
-                client={client}
-                projectId={selectedId}
-                onUpload={handleUpload}
-                onDownload={handleDownload}
-                onLock={handleLock}
-                onUnlock={handleUnlock}
-                onRevert={handleRevert}
-                onSelectFile={setSelectedFile}
-              />
+              {selectedFile && (
+                <FileDetail
+                  file={selectedFile}
+                  files={files}
+                  currentMemberId={currentMemberId}
+                  isOnline={isOnline}
+                  client={client}
+                  projectId={selectedId}
+                  onUpload={handleUpload}
+                  onDownload={handleDownload}
+                  onLock={handleLock}
+                  onUnlock={handleUnlock}
+                  onRevert={handleRevert}
+                  onSelectFile={setSelectedFile}
+                />
+              )}
             </>
           )
         ) : (
@@ -490,12 +512,14 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
         )}
 
         {/* Activity log — right column */}
-        <ActivityFeed
-          activities={activities}
-          events={events}
-          pullSessions={pullSessions}
-          onRevertPullSession={handleRevertPullSession}
-        />
+        {showActivity && (
+          <ActivityFeed
+            activities={activities}
+            events={events}
+            pullSessions={pullSessions}
+            onRevertPullSession={handleRevertPullSession}
+          />
+        )}
       </div>
 
       {/* Init project dialog */}
