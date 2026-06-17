@@ -39,6 +39,10 @@ export function useFileWatch(
   // can take far longer than the poll interval, and stacking concurrent scans of the
   // same GB folder thrashes the disk so nothing ever finishes.
   const runningRef = useRef(false)
+  // Guards against the 5s poll re-hashing the whole project (scanDir) while a push
+  // or pull is actively streaming files off the same disk — that concurrency thrashes
+  // the disk and slows the transfer. Set during push/pull, checked by compare().
+  const transferringRef = useRef(false)
   const native = isNativeAvailable()
 
   const compare = useCallback(async () => {
@@ -52,8 +56,9 @@ export function useFileWatch(
       setComparison(null)
       return
     }
-    // Skip this tick if a scan is already in flight — don't stack concurrent scans.
-    if (runningRef.current) return
+    // Skip this tick if a scan is already in flight (don't stack concurrent scans)
+    // or a push/pull is transferring (don't rehash the disk mid-transfer).
+    if (runningRef.current || transferringRef.current) return
     runningRef.current = true
     setLoading(true)
     try {
@@ -110,6 +115,7 @@ export function useFileWatch(
     if (!client || !projectId || !comparison) return null
     const localPath = getLocalPath(projectId)
     if (!localPath) return null
+    transferringRef.current = true
     setLoading(true)
     const errors: SyncResult['errors'] = []
     let done = 0
@@ -172,9 +178,12 @@ export function useFileWatch(
           errors.push({ path: d.path, error: e instanceof Error ? e.message : String(e) })
         }
       }
+      // Release before the refresh scan, else compare() would skip itself.
+      transferringRef.current = false
       await compare()
       return { done, errors }
     } finally {
+      transferringRef.current = false
       setLoading(false)
     }
   }, [client, projectId, comparison, serverUrl, memberName, apiKey, compare])
@@ -183,6 +192,7 @@ export function useFileWatch(
     if (!client || !projectId || !comparison) return null
     const localPath = getLocalPath(projectId)
     if (!localPath) return null
+    transferringRef.current = true
     setLoading(true)
     const errors: SyncResult['errors'] = []
     let done = 0
@@ -231,9 +241,12 @@ export function useFileWatch(
           // Non-fatal: session logging failure should not abort a successful pull.
         }
       }
+      // Release before the refresh scan, else compare() would skip itself.
+      transferringRef.current = false
       await compare()
       return { done, errors }
     } finally {
+      transferringRef.current = false
       setLoading(false)
     }
   }, [client, projectId, comparison, serverUrl, memberName, apiKey, native, compare])

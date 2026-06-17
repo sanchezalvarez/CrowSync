@@ -7,13 +7,14 @@ interface ProjectPanelProps {
   onSelect: (id: number) => void
   onCreate: (name: string, description?: string, color?: string) => Promise<unknown>
   onDelete: (id: number) => Promise<void>
+  onCollapse?: () => void
 }
 
 // User-pickable project label colors. Intentionally hex literals — these are the
 // chosen colors stored on the project row, not theme tokens.
 const PROJECT_COLORS = ['#FF6B35', '#00D4AA', '#5B8DEF', '#F59E0B', '#EF4444', '#A78BFA']
 
-export function ProjectPanel({ projects, selectedId, onSelect, onCreate, onDelete }: ProjectPanelProps) {
+export function ProjectPanel({ projects, selectedId, onSelect, onCreate, onDelete, onCollapse }: ProjectPanelProps) {
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
@@ -43,13 +44,24 @@ export function ProjectPanel({ projects, selectedId, onSelect, onCreate, onDelet
     <div className="w-52 bg-surface-1 border-r border-border-active flex flex-col h-full">
       <div className="px-3 py-2.5 border-b border-border-active flex items-center justify-between">
         <span className="text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest">Projects</span>
-        <button
-          onClick={() => setShowNew(true)}
-          title="New project"
-          className="btn-riso btn-riso-secondary w-5 h-5 px-0 text-sm font-bold rounded"
-        >
-          +
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowNew(true)}
+            title="New project"
+            className="btn-riso btn-riso-secondary w-5 h-5 px-0 text-sm font-bold rounded"
+          >
+            +
+          </button>
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              title="Hide projects"
+              className="btn-riso btn-riso-secondary w-5 h-5 px-0 text-sm font-mono rounded"
+            >
+              {'‹'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">

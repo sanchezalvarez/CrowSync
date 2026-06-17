@@ -204,7 +204,7 @@ function App() {
   // ── Setup ─────────────────────────────────────────────────────────
   if (showSetup) {
     return (
-      <div className="h-screen bg-surface-0 scanlines flex items-center justify-center">
+      <div className="h-full bg-surface-0 scanlines flex items-center justify-center">
         <div className="w-[360px] animate-riso-fade-up">
           <div className="flex items-center gap-2 mb-8">
             <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
@@ -291,7 +291,7 @@ function App() {
   // ── Settings ──────────────────────────────────────────────────────
   if (showSettings) {
     return (
-      <div className="h-screen bg-surface-0 scanlines overflow-y-auto flex items-start justify-center py-10">
+      <div className="h-full bg-surface-0 scanlines overflow-y-auto flex items-start justify-center py-10">
         <div className="w-[420px] animate-riso-fade-up">
           <div className="flex items-center gap-2 mb-6">
             <span className="text-accent font-bold text-lg font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
@@ -480,7 +480,7 @@ function App() {
 
   if (!client) {
     return (
-      <div className="h-screen bg-surface-0 scanlines flex items-center justify-center text-text-ghost font-mono text-xs">
+      <div className="h-full bg-surface-0 scanlines flex items-center justify-center text-text-ghost font-mono text-xs">
         Loading...
       </div>
     )

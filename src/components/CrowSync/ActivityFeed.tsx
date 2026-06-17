@@ -6,6 +6,7 @@ interface ActivityFeedProps {
   events: SyncEvent[]
   pullSessions?: PullSession[]
   onRevertPullSession?: (id: number) => void
+  onCollapse?: () => void
 }
 
 function formatTime(dateStr: string): string {
@@ -144,7 +145,7 @@ type FeedItem =
   | { kind: 'ws'; at: string; data: SyncEvent }
   | { kind: 'pull'; at: string; data: PullSession }
 
-export function ActivityFeed({ activities, events, pullSessions = [], onRevertPullSession }: ActivityFeedProps) {
+export function ActivityFeed({ activities, events, pullSessions = [], onRevertPullSession, onCollapse }: ActivityFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [expandedSession, setExpandedSession] = useState<number | null>(null)
 
@@ -167,12 +168,23 @@ export function ActivityFeed({ activities, events, pullSessions = [], onRevertPu
     <div className="w-64 bg-surface-1 border-l border-border-active flex flex-col h-full shrink-0">
       <div className="px-3 py-2.5 border-b border-border-active flex items-center justify-between shrink-0">
         <span className="text-[12px] font-mono font-bold text-text-muted uppercase tracking-widest">Log</span>
-        {total > 0 && (
-          <span className="text-[11px] font-mono font-bold text-text-ghost bg-surface-3 border border-border-active px-1.5 py-px rounded"
-            style={{ boxShadow: '1px 1px 0px var(--color-border-active)' }}>
-            {total}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {total > 0 && (
+            <span className="text-[11px] font-mono font-bold text-text-ghost bg-surface-3 border border-border-active px-1.5 py-px rounded"
+              style={{ boxShadow: '1px 1px 0px var(--color-border-active)' }}>
+              {total}
+            </span>
+          )}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              title="Hide log"
+              className="btn-riso btn-riso-secondary w-5 h-5 px-0 text-sm font-mono rounded"
+            >
+              {'›'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">

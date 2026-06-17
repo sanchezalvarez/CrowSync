@@ -86,6 +86,11 @@ def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # WAL+NORMAL: durable across an app crash, fsync only at checkpoint (not every
+    # commit). A bulk import writes 3-4 commits per file — fsync-per-commit on
+    # Windows made multi-thousand-file uploads crawl. Only an OS/power crash can
+    # lose the last transaction, acceptable here (the blob is already on disk).
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

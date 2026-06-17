@@ -8,15 +8,20 @@ dumb blob + metadata store that never reads anyone's filesystem. The desktop
 app scans your folder natively, diffs it against the server, and pushes/pulls
 per file.
 
+![CrowSync desktop app](docs/screenshot.png)
+
 ## Features
 
 - **File locking** — nobody overwrites your work (HTTP 423 on locked uploads, auto-unlock after a timeout)
 - **Version history** — every upload is a new version; revert to any previous one
-- **Push / Pull** — client-side sync of your local folder against the server
-- **Conflict detection** — stale uploads are rejected (HTTP 409) until you force or pull
+- **Push / Pull** — client-side sync of your local folder against the server, with delete propagation in both directions (a removed file stays removed instead of resurrecting)
+- **Resumable uploads** — a dropped connection resumes a multi-GB asset from the last received byte instead of restarting (tus-lite session flow)
+- **Conflict detection** — stale uploads are rejected (HTTP 409) until you force or pull; each file carries a sync base so changes are attributed to the side that actually moved
+- **Unity-aware locking** — auto-pairs an asset with its `.meta`, locks dependencies as a group, and suggests GUID-referenced assets to lock together; warns when a scene/prefab is edited without a lock
 - **Ignore patterns** — Unity/Godot/Unreal junk skipped by default, extendable via `.crowsyncignore`
 - **Real-time notifications** — WebSocket events when teammates lock/upload/revert
 - **Activity log** — full audit trail per project
+- **Riso-styled desktop UI** — custom dark/light themeable window chrome; collapsible side panels
 
 ## Quick start (Docker server)
 
@@ -83,6 +88,7 @@ The server is pure Python — no compiled dependencies — so it runs natively o
 | `CROWSYNC_DB_PATH` | `./crowsync.db` | SQLite database file |
 | `CROWSYNC_STORAGE_ROOT` | `./storage` | Versioned blob storage (overridable at runtime via the `storage_root` setting) |
 | `CROWSYNC_ADMIN_TOKEN` | *(empty)* | Required as `X-Admin-Token` header to register members once the first member exists. Generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `CROWSYNC_OPEN_REGISTRATION` | `0` | `1`/`true` = trusted-LAN mode: anyone on the network registers (or recovers a lost key) with just a name, no admin token. For firewalled teams only — never a public server. Destructive ops still require the admin token. |
 
 ## Members & authentication
 
@@ -91,6 +97,9 @@ The server is pure Python — no compiled dependencies — so it runs natively o
 - The **first** member registers without any token (bootstrap mode). Every
   following registration requires the `X-Admin-Token` header matching
   `CROWSYNC_ADMIN_TOKEN`.
+- **Open LAN mode** (`CROWSYNC_OPEN_REGISTRATION=1`) skips the token entirely so
+  anyone on a trusted/firewalled network can register or recover by name. The
+  setup screen detects this (via `/health`) and hides the admin-token field.
 - Re-posting `/members` with an existing name (with a valid admin token)
   **issues a fresh API key** — the recovery path for a new machine. Because only
   the hash is stored the old key can't be returned, so any previous machine's key

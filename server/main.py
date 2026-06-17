@@ -1459,4 +1459,9 @@ async def _auto_unlock_loop():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server.main:app", host="0.0.0.0", port=PORT, reload=True)
+    # Watch only the source dir — otherwise blob writes to ./storage and the
+    # SQLite DB (both inside cwd) trigger a reload that kills in-flight uploads.
+    uvicorn.run(
+        "server.main:app", host="0.0.0.0", port=PORT,
+        reload=True, reload_dirs=["server"],
+    )

@@ -293,7 +293,11 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
     if (comparison.unity?.is_unity) {
       msgs.push(...comparison.unity.warnings.map(w => w.message))
       const lockedByMe = new Set(files.filter(f => f.locked_by_id === currentMemberId).map(f => f.path))
-      for (const p of changed) {
+      // Only genuine modifications warrant a "modified without a lock" warning. A
+      // new_local file (e.g. the whole initial import) is brand new — it isn't on
+      // the server, can't conflict with anyone, and wasn't "modified". Warning on
+      // it spams the bar with thousands of false positives during import.
+      for (const p of comparison.modified_local.map(f => f.path)) {
         if (lockedByMe.has(p)) continue
         const name = p.split('/').pop()
         if (p.endsWith('.unity')) msgs.push(`Scene ${name} was modified without a lock. Scenes are high-conflict files.`)
@@ -304,29 +308,18 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
   }, [comparison, files, currentMemberId])
 
   return (
-    <div className="flex flex-col h-screen bg-surface-0 text-text-primary scanlines">
+    <div className="flex flex-col h-full bg-surface-0 text-text-primary scanlines">
       {/* Topbar */}
       <header className="h-11 bg-surface-1 border-b border-border-active flex items-center px-4 gap-3 shrink-0" style={{ boxShadow: '0 1px 0 var(--color-border-active)' }}>
-        <div className="flex items-center gap-1.5">
-          <span className="text-accent font-bold text-sm font-mono" style={{ textShadow: '1px 1px 0px var(--color-sync)' }}>CS</span>
-          <span className="text-text-primary font-semibold text-sm tracking-wide">CrowSync</span>
-        </div>
+        {/* Left: project context */}
+        <div className="flex-1 flex items-center gap-3 min-w-0">
+          {selectedId && (
+            <span className="text-text-muted text-xs font-mono truncate">
+              / {projects.find(p => p.id === selectedId)?.name}
+            </span>
+          )}
 
-        <button
-          onClick={() => setShowProjects(p => !p)}
-          className="btn-riso btn-riso-secondary text-[11px] font-mono px-1.5 py-0.5 rounded shrink-0"
-          title={showProjects ? 'Hide projects' : 'Show projects'}
-        >
-          {showProjects ? '‹' : '›'}
-        </button>
-
-        {selectedId && (
-          <span className="text-text-muted text-xs font-mono">
-            / {projects.find(p => p.id === selectedId)?.name}
-          </span>
-        )}
-
-        {selectedId && isUnity && (
+          {selectedId && isUnity && (
           <span
             className="text-[11px] font-mono text-sync bg-sync-muted border border-sync/30 px-1.5 py-px rounded"
             title="Assets/ and ProjectSettings/ detected — Unity ignore rules active"
@@ -335,10 +328,11 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
           </span>
         )}
 
-        <div className="flex-1" />
+        </div>
 
-        {/* Change status badges */}
-        {selectedId && changeSummary && (
+        {/* Center: sync status + actions */}
+        <div className="flex items-center gap-3 shrink-0">
+          {selectedId && changeSummary && (
           <div className="flex gap-3 text-[13px] font-mono">
             {changeSummary.synced > 0 && (
               <span className="text-sync">{changeSummary.synced} synced</span>
@@ -387,36 +381,37 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
               {pulling ? 'PULL...' : `PULL${hasRemoteChanges ? ` ${(changeSummary?.new_remote || 0) + (changeSummary?.behind || 0)}` : ''}`}
             </button>
 
-            <button
-              onClick={() => setShowInit(true)}
-              disabled={!isOnline || !native}
-              className="btn-riso btn-riso-secondary text-[13px] font-mono px-2 py-1 rounded"
-              title={native ? 'Initialize / import folder' : 'Local sync needs the desktop app'}
-            >
-              INIT
-            </button>
+            {/* Only offer INIT until this member has mapped a local folder. Once
+                initialized, re-running it would re-upload every file at base 0
+                (a wall of 409s) — the normal PUSH/PULL flow takes over instead. */}
+            {getLocalPath(selectedId) === '' && (
+              <button
+                onClick={() => setShowInit(true)}
+                disabled={!isOnline || !native}
+                className="btn-riso btn-riso-secondary text-[13px] font-mono px-2 py-1 rounded"
+                title={native ? 'Initialize / import folder' : 'Local sync needs the desktop app'}
+              >
+                INIT
+              </button>
+            )}
           </div>
-        )}
+          )}
+        </div>
 
-        <SyncStatus isOnline={isOnline} serverVersion={serverVersion} />
+        {/* Right: connection + member + settings */}
+        <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
+          <SyncStatus isOnline={isOnline} serverVersion={serverVersion} />
 
-        <span className="text-[13px] text-text-muted font-mono">{memberName}</span>
+          <span className="text-[13px] text-text-muted font-mono truncate">{memberName}</span>
 
-        <button
-          onClick={() => setShowActivity(a => !a)}
-          className="btn-riso btn-riso-secondary text-[11px] font-mono px-1.5 py-0.5 rounded shrink-0"
-          title={showActivity ? 'Hide activity log' : 'Show activity log'}
-        >
-          {showActivity ? '\u203A' : '\u2039'}
-        </button>
-
-        <button
-          onClick={onSettings}
-          className="btn-riso btn-riso-secondary text-[13px] w-7 h-7 px-0 rounded shrink-0"
-          title="Settings"
-        >
-          {'\u2699\uFE0F'}
-        </button>
+          <button
+            onClick={onSettings}
+            className="btn-riso btn-riso-secondary text-[12px] font-mono font-bold tracking-wider w-9 h-7 px-0 rounded shrink-0"
+            title="Settings"
+          >
+            CFG
+          </button>
+        </div>
       </header>
 
       {/* Safety warnings — non-blocking */}
@@ -433,14 +428,25 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {showProjects && (
+        {showProjects ? (
           <ProjectPanel
             projects={projects}
             selectedId={selectedId}
             onSelect={select}
             onCreate={createProject}
             onDelete={deleteProject}
+            onCollapse={() => setShowProjects(false)}
           />
+        ) : (
+          // Collapsed: a thin rail at the edge re-opens the panel (the toggle lives
+          // on/at the panel itself, not in the header).
+          <button
+            onClick={() => setShowProjects(true)}
+            title="Show projects"
+            className="w-5 shrink-0 bg-surface-1 border-r border-border-active flex items-start justify-center pt-2.5 text-text-muted hover:text-accent hover:bg-surface-2 transition-colors font-mono text-sm"
+          >
+            {'›'}
+          </button>
         )}
 
         {selectedId ? (
@@ -507,13 +513,22 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
         )}
 
         {/* Activity log — right column */}
-        {showActivity && (
+        {showActivity ? (
           <ActivityFeed
             activities={activities}
             events={events}
             pullSessions={pullSessions}
             onRevertPullSession={handleRevertPullSession}
+            onCollapse={() => setShowActivity(false)}
           />
+        ) : (
+          <button
+            onClick={() => setShowActivity(true)}
+            title="Show log"
+            className="w-5 shrink-0 bg-surface-1 border-l border-border-active flex items-start justify-center pt-2.5 text-text-muted hover:text-accent hover:bg-surface-2 transition-colors font-mono text-sm"
+          >
+            {'‹'}
+          </button>
         )}
       </div>
 
