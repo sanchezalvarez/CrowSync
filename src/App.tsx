@@ -41,8 +41,8 @@ function App() {
     return stored !== null ? Number(stored) : 5000
   })
 
-  // Form state for settings (client prefs)
-  const [formTheme, setFormTheme] = useState<'light' | 'dark'>(theme)
+  // Form state for settings (client prefs). Theme isn't here — it applies live
+  // via applyTheme, so the appearance buttons bind to `theme` directly.
   const [formSyncInterval, setFormSyncInterval] = useState<string>(String(syncInterval))
   const [formSettingsAdminToken, setFormSettingsAdminToken] = useState('')
 
@@ -50,6 +50,15 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  // Theme is a pure client-side preference — apply it live the instant the user
+  // picks it (instant preview, themes the open settings screen too) and persist
+  // immediately. Decoupled from the "Save" button, which is gated on a server
+  // client and shouldn't hold a local appearance toggle hostage.
+  const applyTheme = useCallback((t: 'light' | 'dark') => {
+    setTheme(t)
+    localStorage.setItem('crowsync_theme', t)
+  }, [])
 
   // A 401 on an authenticated call means the stored session is stale (the server
   // doesn't recognize this member/key — e.g. the DB was reset). Drop the key and
@@ -74,10 +83,9 @@ function App() {
   // Sync the settings form from live client-side values when the panel opens.
   useEffect(() => {
     if (!showSettings) return
-    setFormTheme(theme)
     setFormSyncInterval(String(syncInterval))
     setFormSettingsAdminToken(localStorage.getItem('crowsync_admin_token') || '')
-  }, [showSettings, theme, syncInterval])
+  }, [showSettings, syncInterval])
 
   // Fetch server-side settings + ignore rules when the panel opens. Kept separate
   // from the form-sync above so changing theme/interval doesn't refetch them.
@@ -179,9 +187,7 @@ function App() {
 
   const saveServerSettings = useCallback(async () => {
     if (!client) return
-    // Save client-side preferences
-    localStorage.setItem('crowsync_theme', formTheme)
-    setTheme(formTheme)
+    // Theme already applied live via applyTheme — only the remaining prefs here.
     const interval = Number(formSyncInterval)
     localStorage.setItem('crowsync_sync_interval', String(interval))
     setSyncInterval(interval)
@@ -199,7 +205,7 @@ function App() {
       })
     } catch { /* ignore */ }
     setShowSettings(false)
-  }, [client, formStorageRoot, formAutoUnlock, formMaxFileSize, formTheme, formSyncInterval, formSettingsAdminToken])
+  }, [client, formStorageRoot, formAutoUnlock, formMaxFileSize, formSyncInterval, formSettingsAdminToken])
 
   // ── Setup ─────────────────────────────────────────────────────────
   if (showSetup) {
@@ -323,13 +329,13 @@ function App() {
               <p className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-widest mb-2">Appearance</p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setFormTheme('light')}
-                  className={`btn-riso flex-1 text-[13px] py-2 rounded gap-1.5 ${formTheme === 'light' ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
+                  onClick={() => applyTheme('light')}
+                  className={`btn-riso flex-1 text-[13px] py-2 rounded gap-1.5 ${theme === 'light' ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
                   ☀ Light
                 </button>
                 <button
-                  onClick={() => setFormTheme('dark')}
-                  className={`btn-riso flex-1 text-[13px] py-2 rounded gap-1.5 ${formTheme === 'dark' ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
+                  onClick={() => applyTheme('dark')}
+                  className={`btn-riso flex-1 text-[13px] py-2 rounded gap-1.5 ${theme === 'dark' ? 'btn-riso-primary' : 'btn-riso-secondary'}`}>
                   ☾ Dark
                 </button>
               </div>

@@ -78,6 +78,11 @@ export interface UploadArgs {
   /** Stable upload id for resumable transfers — lets a killed upload resume from
    * the server's last received byte instead of restarting (see uploadState.ts). */
   resumeId?: string
+  /** True only when `resumeId` comes from a persisted prior attempt (a genuine
+   * resume). When false the id is freshly minted, so the native side skips the
+   * status probe and goes straight to init — avoids a wasted 404 round-trip per
+   * new file (matters when importing thousands of small files). */
+  tryResume?: boolean
 }
 
 export async function nativeUpload(args: UploadArgs): Promise<TransferOutcome> {

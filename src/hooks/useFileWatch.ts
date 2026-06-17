@@ -132,13 +132,17 @@ export function useFileWatch(
         try {
           // Reuse a persisted id if a previous attempt was interrupted (resume),
           // else mint one and persist it before transferring so a crash mid-upload
-          // can pick up where it left off.
-          const resumeId = getPendingUpload(projectId, item.path) ?? newUploadId()
+          // can pick up where it left off. tryResume distinguishes the two: only a
+          // persisted id is worth probing the server for — a fresh id never has a
+          // session, so probing it just wastes a 404 round-trip per new file.
+          const storedId = getPendingUpload(projectId, item.path)
+          const resumeId = storedId ?? newUploadId()
           setPendingUpload(projectId, item.path, resumeId)
           const outcome = await nativeUpload({
             serverUrl, memberName, apiKey, projectId,
             relPath: item.path, absPath: joinLocal(localPath, item.path),
-            baseVersion: item.base, message: '', force: false, resumeId,
+            baseVersion: item.base, message: '', force: false,
+            resumeId, tryResume: storedId !== null,
           })
           if (outcome.ok) {
             done++

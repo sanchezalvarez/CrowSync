@@ -4,34 +4,34 @@
   /* Surface layers — light Risograph (warm cream → paper white).
      Higher index = lighter/more raised, so existing hover:bg-surface-N
      semantics (hover → lighter) still read correctly. */
-  --color-surface-0: #EAE3D4;  /* base canvas — warm cream */
-  --color-surface-1: #F1EBDF;  /* sidebars / topbar */
-  --color-surface-2: #F7F2EA;  /* cards / modals */
-  --color-surface-3: #FCF9F3;  /* raised / hover */
-  --color-surface-4: #DAD1C0;  /* strong hover / scrollbar thumb */
+  --color-surface-0: #F5F0E8;  /* riso cream — base canvas */
+  --color-surface-1: #F9F5EE;  /* sidebars / topbar */
+  --color-surface-2: #FDFAF4;  /* cards / modals */
+  --color-surface-3: #FFFFFF;  /* raised / hover */
+  --color-surface-4: #E4DCCD;  /* strong hover / scrollbar thumb */
 
-  /* Text — warm near-black ink scale */
-  --color-text-primary: #1B1813;
-  --color-text-secondary: #57514A;
-  --color-text-muted: #8C857A;
-  --color-text-ghost: #B3AB9C;
+  /* Text — riso black ink scale */
+  --color-text-primary: #1A1A1A;
+  --color-text-secondary: #4D4A45;
+  --color-text-muted: #807A70;
+  --color-text-ghost: #B0A99C;
 
-  /* Accent — bold Risograph inks, tuned for contrast on cream */
-  --color-accent: #E0480E;
-  --color-accent-hover: #C23D0B;
-  --color-accent-muted: #E0480E1A;
-  --color-sync: #0AA386;
-  --color-sync-muted: #0AA3861F;
-  --color-pull: #3D6FD6;
-  --color-pull-muted: #3D6FD61F;
-  --color-danger: #DC2626;
-  --color-danger-muted: #DC26261F;
-  --color-locked: #C97A0A;
-  --color-locked-muted: #C97A0A1F;
+  /* Accent — Risograph ink palette (red / teal / blue / yellow on cream) */
+  --color-accent: #E8403A;       /* riso red */
+  --color-accent-hover: #C9332E;
+  --color-accent-muted: #E8403A1A;
+  --color-sync: #2D8A7B;         /* riso teal */
+  --color-sync-muted: #2D8A7B1F;
+  --color-pull: #2F6FB0;         /* riso blue (download/behind) */
+  --color-pull-muted: #2F6FB01F;
+  --color-danger: #C42620;       /* deep red — distinct from accent */
+  --color-danger-muted: #C426201F;
+  --color-locked: #A8780C;       /* dark gold — readable yellow ink on cream */
+  --color-locked-muted: #F2C44A33; /* bright riso yellow tint */
 
   /* Border */
-  --color-border: #DDD5C6;       /* subtle warm divider */
-  --color-border-active: #1B1813; /* bold near-black riso border */
+  --color-border: #E0D8C9;       /* subtle warm divider */
+  --color-border-active: #1A1A1A; /* bold riso black border */
 
   /* Fonts */
   --font-family-sans: 'DM Sans', system-ui, sans-serif;
@@ -273,32 +273,77 @@ body {
 }
 
 /* ── Dark theme ──────────────────────────────────────────────────── */
+/*
+   Risograph dark philosophy:
+   - Surfaces: near-black paper, warm charcoal grain — NOT cool grey
+   - Text: warm near-white as the primary "ink"; hierarchy via brightness not hue
+   - Accent inks: raised to vivid/fully-saturated on dark so the "printed ink"
+     reads boldly against the dark paper (Risograph inks are vibrant, not washed)
+   - Muted backgrounds: increased opacity so tinted panels are actually visible
+   - Offset shadows: use the warm near-white border-active so the "misregistration"
+     stamp effect reads on dark surfaces — not the accent color (too subtle/muddy)
+   - Ghost text: kept at a legible light-grey, not near-black (would disappear)
+*/
 [data-theme="dark"] {
+  /* ── Surfaces — warm near-black paper stack ── */
   --color-surface-0: #131210;
   --color-surface-1: #1C1A17;
   --color-surface-2: #242118;
   --color-surface-3: #2D2A22;
   --color-surface-4: #3A3630;
-  --color-text-primary: #E8E1D0;
-  --color-text-secondary: #A09880;
-  --color-text-muted: #6B6358;
-  --color-text-ghost: #4A4540;
-  --color-border: #2D2A22;
-  --color-border-active: #E8E1D0;
-  --shadow-riso-md-dark: 4px 4px 0px var(--color-border-active);
-  --shadow-riso-lg-dark: 6px 6px 0px var(--color-border-active);
+
+  /* ── Text — warm ink hierarchy on dark paper ── */
+  --color-text-primary:   #F5F0E8;  /* riso cream — primary ink on dark paper */
+  --color-text-secondary: #B8AF9C;
+  --color-text-muted:     #837A6A;
+  --color-text-ghost:     #5A5346;
+
+  /* ── Borders ── */
+  --color-border:        #2D2A22;   /* subtle warm divider */
+  --color-border-active: #F5F0E8;   /* cream — stamp/misregistration offset */
+
+  /* ── Accent inks — vivid "printed" colors on dark paper ──
+     Light theme uses slightly toned inks (designed for cream).
+     Dark theme uses full-saturation versions so they pop on near-black. */
+  --color-accent:       #F4564E;  /* riso red — vivid on dark paper */
+  --color-accent-hover: #D84840;
+  --color-accent-muted: #F4564E2E; /* opacity 2E (~18%) for visible tint panels */
+
+  --color-sync:         #3BA593;  /* riso teal — lifted for dark */
+  --color-sync-muted:   #3BA5932E;
+
+  --color-pull:         #4D8AD0;  /* riso blue — lifted for dark */
+  --color-pull-muted:   #4D8AD02E;
+
+  --color-danger:       #F0463F;  /* riso red — lifted for dark */
+  --color-danger-muted: #F0463F2E;
+
+  --color-locked:       #F2C44A;  /* riso yellow — pops on dark paper */
+  --color-locked-muted: #F2C44A2E;
+
+  /* ── Riso offset shadows — only the accent-offset trio needs a dark override
+     (accent → warm-white stamp). The teal/neutral/border tokens already resolve
+     through --color-sync / --color-border-active, which are overridden above, so
+     they don't need redeclaring here. ── */
+  --shadow-riso-sm:     2px 2px 0px var(--color-border-active);
+  --shadow-riso-md:     4px 4px 0px var(--color-border-active);
+  --shadow-riso-lg:     6px 6px 0px var(--color-border-active);
+
+  /* ── Button press shadows — warm-white stamp offset ── */
   --btn-shadow-rest:   3px 3px 0px var(--color-border-active);
   --btn-shadow-hover:  2px 2px 0px var(--color-border-active);
   --btn-shadow-active: 0px 0px 0px var(--color-border-active);
 }
 
 [data-theme="dark"] .scanlines::after {
+  /* Slightly stronger scanlines on dark — the near-black paper absorbs more
+     so we need a touch more opacity to read the texture at all.             */
   background: repeating-linear-gradient(
     0deg,
     transparent,
     transparent 2px,
-    rgba(232,225,208,0.018) 2px,
-    rgba(232,225,208,0.018) 4px
+    rgba(237,230,211,0.028) 2px,
+    rgba(237,230,211,0.028) 4px
   );
 }
 

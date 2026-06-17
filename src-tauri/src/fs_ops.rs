@@ -235,6 +235,7 @@ pub async fn upload_file(
     message: String,
     force: bool,
     resume_id: Option<String>,
+    try_resume: Option<bool>,
 ) -> Result<TransferOutcome, String> {
     let base = server_url.trim_end_matches('/').to_string();
     let size = tokio::fs::metadata(&abs_path)
@@ -253,10 +254,16 @@ pub async fn upload_file(
     let upload_id: String;
     let mut resumed = false;
 
-    if let Some(rid) = resume_id.as_ref() {
-        if let Ok(off) = fetch_offset(&client, &base, &member_name, &api_key, project_id, rid).await {
-            offset = off;
-            resumed = true;
+    // Only probe the server for an existing session when this id came from a
+    // persisted prior attempt (try_resume). For a freshly-minted id there is no
+    // session yet, so the probe would always 404 — skip it and go straight to
+    // init. The id is still handed to init below, so a future restart can resume.
+    if try_resume.unwrap_or(false) {
+        if let Some(rid) = resume_id.as_ref() {
+            if let Ok(off) = fetch_offset(&client, &base, &member_name, &api_key, project_id, rid).await {
+                offset = off;
+                resumed = true;
+            }
         }
     }
 
