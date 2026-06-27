@@ -608,6 +608,99 @@ def list_activity(project_id: int, limit: int = 50, offset: int = 0) -> list[dic
     return _rows_to_list(rows)
 
 
+# ── Stats ────────────────────────────────────────────────────────────
+
+# How many distinct extensions to surface before folding the rest into "other".
+_FILE_TYPE_CAP = 12
+# Heatmap window — 12 weeks of daily activity counts.
+_HEATMAP_DAYS = 84
+
+
+def project_stats(project_id: int) -> dict:
+    """Aggregate, read-only project metrics for the stats overlay. Pure SELECTs over
+    files/versions/activity/members — no new tables, no write lock."""
+    conn = _get_conn()
+    # 1) Storage usage — current files vs. full version history (blobs on disk).
+    cur_files = conn.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS bytes FROM files WHERE project_id = ?",
+        (project_id,),
+    ).fetchone()
+    ver_blobs = conn.execute(
+        """SELECT COUNT(*) AS n, COALESCE(SUM(v.size_bytes), 0) AS bytes
+           FROM versions v JOIN files f ON v.file_id = f.id
+           WHERE f.project_id = ?""",
+        (project_id,),
+    ).fetchone()
+    # 2) Active locks — grouped by holder.
+    lock_rows = conn.execute(
+        """SELECT m.id AS member_id, m.name AS member_name, m.avatar_color,
+                  COUNT(*) AS count
+           FROM files f JOIN members m ON f.locked_by_id = m.id
+           WHERE f.project_id = ? AND f.locked_by_id IS NOT NULL
+           GROUP BY m.id ORDER BY count DESC, m.name""",
+        (project_id,),
+    ).fetchall()
+    # 3) Top contributors — upload activity per member.
+    contrib_rows = conn.execute(
+        """SELECT m.id AS member_id, m.name AS member_name, m.avatar_color,
+                  COUNT(*) AS actions
+           FROM activity a JOIN members m ON a.member_id = m.id
+           WHERE a.project_id = ? AND a.action = 'upload'
+           GROUP BY m.id ORDER BY actions DESC, m.name LIMIT 20""",
+        (project_id,),
+    ).fetchall()
+    # 4) File-type breakdown — extension computed in Python (SQLite has no rsplit).
+    path_rows = conn.execute(
+        "SELECT path, size_bytes FROM files WHERE project_id = ?", (project_id,)
+    ).fetchall()
+    # 5) Activity heatmap — daily counts over the last _HEATMAP_DAYS (UTC, like created_at).
+    heat_rows = conn.execute(
+        """SELECT DATE(created_at) AS day, COUNT(*) AS count
+           FROM activity
+           WHERE project_id = ? AND created_at >= DATE('now', ?)
+           GROUP BY day ORDER BY day""",
+        (project_id, f"-{_HEATMAP_DAYS} days"),
+    ).fetchall()
+    conn.close()
+
+    files_bytes = cur_files["bytes"]
+    version_bytes = ver_blobs["bytes"]
+
+    # Aggregate extensions by total bytes, keep the top _FILE_TYPE_CAP, fold the rest.
+    by_ext: dict[str, dict] = {}
+    for r in path_rows:
+        ext = Path(r["path"]).suffix.lower() or "(none)"
+        slot = by_ext.setdefault(ext, {"ext": ext, "count": 0, "bytes": 0})
+        slot["count"] += 1
+        slot["bytes"] += r["size_bytes"] or 0
+    ranked = sorted(by_ext.values(), key=lambda s: s["bytes"], reverse=True)
+    file_types = ranked[:_FILE_TYPE_CAP]
+    if len(ranked) > _FILE_TYPE_CAP:
+        rest = ranked[_FILE_TYPE_CAP:]
+        file_types.append({
+            "ext": "other",
+            "count": sum(s["count"] for s in rest),
+            "bytes": sum(s["bytes"] for s in rest),
+        })
+
+    return {
+        "storage": {
+            "file_count": cur_files["n"],
+            "files_bytes": files_bytes,
+            "version_count": ver_blobs["n"],
+            "version_bytes": version_bytes,
+            "total_bytes": files_bytes + version_bytes,
+        },
+        "locks": {
+            "total": sum(r["count"] for r in lock_rows),
+            "by_member": _rows_to_list(lock_rows),
+        },
+        "contributors": _rows_to_list(contrib_rows),
+        "file_types": file_types,
+        "heatmap": [{"day": r["day"], "count": r["count"]} for r in heat_rows],
+    }
+
+
 # ── Settings ─────────────────────────────────────────────────────────
 
 def get_setting(key: str, default: str = "") -> str:

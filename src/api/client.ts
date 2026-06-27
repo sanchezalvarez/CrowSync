@@ -1,4 +1,4 @@
-import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError, PullSession, PullRevertResult } from '../types'
+import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError, PullSession, PullRevertResult, ProjectStats } from '../types'
 
 export class CrowSyncClient {
   private baseUrl: string
@@ -185,6 +185,11 @@ export class CrowSyncClient {
   // Activity
   async listActivity(projectId: number, limit = 50, offset = 0): Promise<Activity[]> {
     return this.request(`/projects/${projectId}/activity?limit=${limit}&offset=${offset}`)
+  }
+
+  // Aggregated project metrics for the stats overlay (storage, locks, contributors, heatmap).
+  async getStats(projectId: number): Promise<ProjectStats> {
+    return this.request(`/projects/${projectId}/stats`)
   }
 
   // Ignore patterns — single source of truth, mirrored into the native scan
