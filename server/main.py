@@ -136,6 +136,45 @@ async def require_admin(x_admin_token: str = Header("")):
         raise HTTPException(403, "Invalid or missing X-Admin-Token")
 
 
+def _is_super_admin(x_admin_token: str) -> bool:
+    """True if the request carries the global env admin token (break-glass)."""
+    return bool(x_admin_token and ADMIN_TOKEN and secrets.compare_digest(x_admin_token, ADMIN_TOKEN))
+
+
+def _project_role(project_id: int, member: dict, x_admin_token: str) -> str | None:
+    """Effective role of `member` in `project_id`: 'admin' for the env super-admin or a
+    project admin, 'member' for a project member, None if no access."""
+    if _is_super_admin(x_admin_token):
+        return "admin"
+    return storage.get_project_role(project_id, member["id"])
+
+
+async def require_project_member(
+    project_id: int,
+    member: dict = Depends(get_current_member),
+    x_admin_token: str = Header(""),
+):
+    """Gate every project-scoped endpoint: caller must belong to the project (any role)
+    or be the env super-admin. 404 if the project is gone, 403 if not a member."""
+    if not storage.get_project(project_id):
+        raise HTTPException(404, "Project not found")
+    if _project_role(project_id, member, x_admin_token) is None:
+        raise HTTPException(403, "Not a member of this project")
+
+
+async def require_project_admin(
+    project_id: int,
+    member: dict = Depends(get_current_member),
+    x_admin_token: str = Header(""),
+):
+    """Gate project administration (rename/delete, manage members). Project admins or
+    the env super-admin pass."""
+    if not storage.get_project(project_id):
+        raise HTTPException(404, "Project not found")
+    if _project_role(project_id, member, x_admin_token) != "admin":
+        raise HTTPException(403, "Project admin required")
+
+
 # ── Rate limiting ────────────────────────────────────────────────────
 # In-memory sliding window for POST /members — the only unauthenticated-ish
 # surface (admin-token guessing). Per-process; fine for a single-instance server.
@@ -200,6 +239,13 @@ class MemberCreate(BaseModel):
     name: str
     email: str = ""
     avatar_color: str = "#0B7268"
+
+class ProjectMemberAdd(BaseModel):
+    member_id: int
+    role: str = "member"
+
+class ProjectMemberRole(BaseModel):
+    role: str
 
 class FileLockRequest(BaseModel):
     path: str
@@ -266,21 +312,35 @@ async def health():
 # ── Projects ─────────────────────────────────────────────────────────
 
 @app.get("/projects")
-async def list_projects(member: dict = Depends(get_current_member)):
-    return storage.list_projects()
+async def list_projects(
+    member: dict = Depends(get_current_member),
+    x_admin_token: str = Header(""),
+):
+    # Members see only the projects they belong to; the env super-admin sees all.
+    # Tag the super-admin's projects with role='admin' so the web UI exposes the
+    # admin controls their token actually grants (review #3).
+    if _is_super_admin(x_admin_token):
+        return [{**p, "role": "admin"} for p in storage.list_projects()]
+    return storage.list_projects_for_member(member["id"])
 
 
 @app.post("/projects", status_code=201)
 async def create_project(body: ProjectCreate, member: dict = Depends(get_current_member)):
     # root_path is a legacy column (the local working folder is client-side now) — pass
-    # empty; the server no longer reads it for sync (N4).
-    project = storage.create_project(body.name, body.description, body.color, "")
+    # empty; the server no longer reads it for sync (N4). The creator becomes the
+    # project's first admin (per-project membership).
+    project = storage.create_project(body.name, body.description, body.color, "", creator_id=member["id"])
     file_manager.get_storage_dir(get_storage_root(), project["id"])
-    return project
+    return {**project, "role": "admin"}
 
 
 @app.put("/projects/{project_id}")
-async def update_project(project_id: int, body: ProjectUpdate, member: dict = Depends(get_current_member)):
+async def update_project(
+    project_id: int,
+    body: ProjectUpdate,
+    member: dict = Depends(get_current_member),
+    _admin: None = Depends(require_project_admin),
+):
     project = storage.get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -292,7 +352,11 @@ async def update_project(project_id: int, body: ProjectUpdate, member: dict = De
 
 
 @app.get("/projects/{project_id}")
-async def get_project(project_id: int, member: dict = Depends(get_current_member)):
+async def get_project(
+    project_id: int,
+    member: dict = Depends(get_current_member),
+    _pm: None = Depends(require_project_member),
+):
     project = storage.get_project(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -315,7 +379,7 @@ async def get_unity_ignore_patterns(member: dict = Depends(get_current_member)):
     return {"patterns": unity.UNITY_IGNORE_PATTERNS}
 
 
-@app.post("/projects/{project_id}/compare")
+@app.post("/projects/{project_id}/compare", dependencies=[Depends(require_project_member)])
 async def compare_project(
     project_id: int,
     manifest: CompareManifest,
@@ -465,7 +529,7 @@ async def compare_project(
 async def delete_project(
     project_id: int,
     member: dict = Depends(get_current_member),
-    _admin: None = Depends(require_admin),
+    _admin: None = Depends(require_project_admin),
 ):
     project = storage.get_project(project_id)
     if not project:
@@ -473,6 +537,72 @@ async def delete_project(
     file_manager.delete_project_storage(get_storage_root(), project_id)
     storage.delete_project(project_id)
     return {"ok": True}
+
+
+# ── Project members ──────────────────────────────────────────────────
+
+@app.get("/projects/{project_id}/members")
+async def list_project_members(
+    project_id: int,
+    member: dict = Depends(get_current_member),
+    _pm: None = Depends(require_project_member),
+):
+    return storage.list_project_members(project_id)
+
+
+def _validate_role(role: str) -> str:
+    if role not in ("admin", "member"):
+        raise HTTPException(422, "role must be 'admin' or 'member'")
+    return role
+
+
+@app.post("/projects/{project_id}/members", status_code=201)
+async def add_project_member(
+    project_id: int,
+    body: ProjectMemberAdd,
+    member: dict = Depends(get_current_member),
+    _admin: None = Depends(require_project_admin),
+):
+    role = _validate_role(body.role)
+    target = storage.get_member(body.member_id)
+    if not target or not target.get("is_active", 1):
+        raise HTTPException(404, "Member not found")
+    # Atomic upsert + last-admin guard (the guard also covers a POST that would
+    # demote the project's sole admin via the role field — review #1).
+    if storage.set_project_member_role(project_id, body.member_id, role) == "last_admin":
+        raise HTTPException(409, "Project must keep at least one admin")
+    return {"ok": True, "members": storage.list_project_members(project_id)}
+
+
+@app.put("/projects/{project_id}/members/{member_id}")
+async def update_project_member_role(
+    project_id: int,
+    member_id: int,
+    body: ProjectMemberRole,
+    member: dict = Depends(get_current_member),
+    _admin: None = Depends(require_project_admin),
+):
+    role = _validate_role(body.role)
+    if storage.get_project_role(project_id, member_id) is None:
+        raise HTTPException(404, "Member is not in this project")
+    if storage.set_project_member_role(project_id, member_id, role) == "last_admin":
+        raise HTTPException(409, "Project must keep at least one admin")
+    return {"ok": True, "members": storage.list_project_members(project_id)}
+
+
+@app.delete("/projects/{project_id}/members/{member_id}")
+async def remove_project_member(
+    project_id: int,
+    member_id: int,
+    member: dict = Depends(get_current_member),
+    _admin: None = Depends(require_project_admin),
+):
+    status = storage.remove_project_member(project_id, member_id)
+    if status == "not_found":
+        raise HTTPException(404, "Member is not in this project")
+    if status == "last_admin":
+        raise HTTPException(409, "Project must keep at least one admin")
+    return {"ok": True, "members": storage.list_project_members(project_id)}
 
 
 # ── Members ──────────────────────────────────────────────────────────
@@ -512,7 +642,7 @@ async def delete_member(
 
 # ── Files ────────────────────────────────────────────────────────────
 
-@app.get("/projects/{project_id}/files")
+@app.get("/projects/{project_id}/files", dependencies=[Depends(require_project_member)])
 async def list_files(project_id: int, member: dict = Depends(get_current_member)):
     project = storage.get_project(project_id)
     if not project:
@@ -557,7 +687,7 @@ def _assert_upload_allowed(existing: dict | None, member: dict, base_version: in
         })
 
 
-@app.post("/projects/{project_id}/files/upload")
+@app.post("/projects/{project_id}/files/upload", dependencies=[Depends(require_project_member)])
 async def upload_file(
     project_id: int,
     file: UploadFile,
@@ -673,7 +803,7 @@ def _part_size(part_path: Path) -> int:
     return part_path.stat().st_size if part_path.exists() else 0
 
 
-@app.post("/projects/{project_id}/files/upload/init")
+@app.post("/projects/{project_id}/files/upload/init", dependencies=[Depends(require_project_member)])
 async def upload_init(
     project_id: int,
     path: str = Query(...),
@@ -719,7 +849,7 @@ def _get_owned_session(project_id: int, upload_id: str, member: dict) -> dict:
     return sess
 
 
-@app.get("/projects/{project_id}/files/upload/{upload_id}")
+@app.get("/projects/{project_id}/files/upload/{upload_id}", dependencies=[Depends(require_project_member)])
 async def upload_status(
     project_id: int,
     upload_id: str,
@@ -760,7 +890,7 @@ async def upload_chunk(
     return {"offset": new_size}
 
 
-@app.delete("/projects/{project_id}/files/upload/{upload_id}")
+@app.delete("/projects/{project_id}/files/upload/{upload_id}", dependencies=[Depends(require_project_member)])
 async def upload_abort(
     project_id: int,
     upload_id: str,
@@ -772,7 +902,7 @@ async def upload_abort(
     return {"aborted": True}
 
 
-@app.post("/projects/{project_id}/files/upload/{upload_id}/complete")
+@app.post("/projects/{project_id}/files/upload/{upload_id}/complete", dependencies=[Depends(require_project_member)])
 async def upload_complete(
     project_id: int,
     upload_id: str,
@@ -851,7 +981,7 @@ async def upload_complete(
     return updated
 
 
-@app.get("/projects/{project_id}/files/download")
+@app.get("/projects/{project_id}/files/download", dependencies=[Depends(require_project_member)])
 async def download_file(
     project_id: int,
     path: str = Query(...),
@@ -946,7 +1076,7 @@ def _build_meta_guid_map(project_id: int, server_files: list[dict]) -> dict[str,
     return out
 
 
-@app.post("/projects/{project_id}/files/lock-suggestions")
+@app.post("/projects/{project_id}/files/lock-suggestions", dependencies=[Depends(require_project_member)])
 async def lock_suggestions(
     project_id: int,
     body: PathRequest,
@@ -982,7 +1112,7 @@ async def lock_suggestions(
     return {"path": path, "is_meta": unity.is_meta_path(path), "suggestions": suggestions}
 
 
-@app.post("/projects/{project_id}/files/lock")
+@app.post("/projects/{project_id}/files/lock", dependencies=[Depends(require_project_member)])
 async def lock_file(
     project_id: int,
     body: FileLockRequest,
@@ -1062,7 +1192,7 @@ async def lock_file(
     }
 
 
-@app.post("/projects/{project_id}/files/unlock")
+@app.post("/projects/{project_id}/files/unlock", dependencies=[Depends(require_project_member)])
 async def unlock_file(
     project_id: int,
     body: FileLockRequest,
@@ -1162,7 +1292,7 @@ async def _commit_revert(project_id, member, file_record, path, target, commit_m
     return updated
 
 
-@app.post("/projects/{project_id}/files/revert")
+@app.post("/projects/{project_id}/files/revert", dependencies=[Depends(require_project_member)])
 async def revert_file(
     project_id: int,
     body: FileRevertRequest,
@@ -1207,7 +1337,7 @@ async def revert_file(
     return updated
 
 
-@app.post("/projects/{project_id}/pull-sessions")
+@app.post("/projects/{project_id}/pull-sessions", dependencies=[Depends(require_project_member)])
 async def create_pull_session_endpoint(
     project_id: int,
     body: PullSessionCreate,
@@ -1222,7 +1352,7 @@ async def create_pull_session_endpoint(
     return {"id": session_id}
 
 
-@app.get("/projects/{project_id}/pull-sessions")
+@app.get("/projects/{project_id}/pull-sessions", dependencies=[Depends(require_project_member)])
 async def list_pull_sessions_endpoint(
     project_id: int,
     limit: int = 20,
@@ -1234,7 +1364,7 @@ async def list_pull_sessions_endpoint(
     return storage.list_pull_sessions(project_id, limit)
 
 
-@app.post("/projects/{project_id}/pull-sessions/{session_id}/revert")
+@app.post("/projects/{project_id}/pull-sessions/{session_id}/revert", dependencies=[Depends(require_project_member)])
 async def revert_pull_session_endpoint(
     project_id: int,
     session_id: int,
@@ -1290,7 +1420,7 @@ async def revert_pull_session_endpoint(
     return {"reverted": reverted, "skipped": skipped, "errors": errors}
 
 
-@app.get("/projects/{project_id}/files/versions")
+@app.get("/projects/{project_id}/files/versions", dependencies=[Depends(require_project_member)])
 async def list_file_versions(
     project_id: int,
     path: str = Query(...),
@@ -1303,7 +1433,7 @@ async def list_file_versions(
     return storage.list_versions(file_record["id"])
 
 
-@app.delete("/projects/{project_id}/files")
+@app.delete("/projects/{project_id}/files", dependencies=[Depends(require_project_member)])
 async def delete_file(
     project_id: int,
     path: str = Query(...),
@@ -1365,7 +1495,7 @@ async def update_settings(
 
 # ── Activity ─────────────────────────────────────────────────────────
 
-@app.get("/projects/{project_id}/activity")
+@app.get("/projects/{project_id}/activity", dependencies=[Depends(require_project_member)])
 async def list_activity(
     project_id: int,
     limit: int = Query(50, ge=1, le=200),
@@ -1375,12 +1505,11 @@ async def list_activity(
     return storage.list_activity(project_id, limit, offset)
 
 
-@app.get("/projects/{project_id}/stats")
+@app.get("/projects/{project_id}/stats", dependencies=[Depends(require_project_member)])
 async def project_stats(project_id: int, member: dict = Depends(get_current_member)):
     """Read-only aggregated metrics for the stats overlay (storage, locks,
-    contributors, file types, activity heatmap). Visible to any member."""
-    if not storage.get_project(project_id):
-        raise HTTPException(404, "Project not found")
+    contributors, file types, activity heatmap). Visible to any member.
+    Existence is already enforced by require_project_member (404)."""
     return storage.project_stats(project_id)
 
 
@@ -1412,6 +1541,11 @@ async def websocket_endpoint(websocket: WebSocket, project_id: int):
     expected_hash = (member or {}).get("api_key", "") or ""
     if not member or not api_key or not secrets.compare_digest(storage.hash_api_key(api_key), expected_hash):
         await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    # Membership gate: only members of this project receive its real-time events.
+    if storage.get_project_role(project_id, member["id"]) is None:
+        await websocket.close(code=4003, reason="Not a member of this project")
         return
 
     await ws_manager.connect(websocket, project_id, member["id"], accept=False)

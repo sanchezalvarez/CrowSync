@@ -58,6 +58,16 @@ CREATE TABLE IF NOT EXISTS activity (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Per-project membership + role. A member sees only projects they belong to;
+-- 'admin' may manage the project (rename/delete) and its members' roles.
+CREATE TABLE IF NOT EXISTS project_members (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  member_id  INTEGER NOT NULL REFERENCES members(id)  ON DELETE CASCADE,
+  role       TEXT NOT NULL DEFAULT 'member',   -- 'admin' | 'member'
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (project_id, member_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
@@ -109,4 +119,5 @@ CREATE INDEX IF NOT EXISTS idx_activity_project ON activity(project_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at);
 CREATE INDEX IF NOT EXISTS idx_upload_sessions_updated ON upload_sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_pull_sessions_project ON pull_sessions(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_project_members_member ON project_members(member_id);
 CREATE INDEX IF NOT EXISTS idx_pull_session_files_session ON pull_session_files(session_id);

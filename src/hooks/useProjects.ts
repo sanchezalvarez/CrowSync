@@ -46,9 +46,15 @@ export function useProjects(client: CrowSyncClient | null) {
 
   const deleteProject = useCallback(async (id: number) => {
     if (!client) return
-    await client.deleteProject(id)
-    setProjects(prev => prev.filter(p => p.id !== id))
-    if (selectedId === id) select(null)
+    try {
+      await client.deleteProject(id)
+      setProjects(prev => prev.filter(p => p.id !== id))
+      if (selectedId === id) select(null)
+    } catch (e) {
+      // e.g. 403 if the caller isn't a project admin — leave the list untouched
+      // and surface the reason rather than crashing the panel.
+      alert(e instanceof Error ? e.message : 'Failed to delete project')
+    }
   }, [client, selectedId, select])
 
   const selected = projects.find(p => p.id === selectedId) ?? null

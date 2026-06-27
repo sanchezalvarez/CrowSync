@@ -6,6 +6,17 @@ export interface Project {
   root_path: string
   created_at: string
   file_count?: number
+  role?: 'admin' | 'member'   // the current member's role in this project
+}
+
+/** One row of a project's membership list (GET /projects/{id}/members). */
+export interface ProjectMember {
+  member_id: number
+  name: string
+  email: string
+  avatar_color: string
+  role: 'admin' | 'member'
+  created_at: string
 }
 
 /** Loosely-typed JSON body returned by API responses/errors. Known fields are

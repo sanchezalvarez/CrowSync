@@ -14,13 +14,22 @@ def _upload(client, pid, path, content, headers, **params):
     )
 
 
-def _second_member(client, token):
+def _second_member(client, token, pid=None, admin_headers=None):
     r = client.post(
         "/members", json={"name": "locker"},
         headers={"X-Admin-Token": token},
     )
     assert r.status_code == 201, r.text
     d = r.json()
+    if pid is not None:
+        # Per-project membership: a project admin adds the locker so they can lock
+        # files in it. `admin_headers` belong to the project's creator (its admin).
+        add = client.post(
+            f"/projects/{pid}/members",
+            json={"member_id": d["id"], "role": "member"},
+            headers=admin_headers,
+        )
+        assert add.status_code == 201, add.text
     return {"X-Member-Name": d["name"], "X-Api-Key": d["api_key"]}
 
 
@@ -46,7 +55,7 @@ def test_upload_second_time_increments_version(app_client, member, project):
 def test_upload_locked_by_other_returns_423(app_client, member, project, monkeypatch):
     monkeypatch.setattr(main_mod, "ADMIN_TOKEN", "tok")
     pid = project["id"]
-    locker_h = _second_member(app_client, "tok")
+    locker_h = _second_member(app_client, "tok", pid, member["headers"])
 
     _upload(app_client, pid, "Assets/model.fbx", b"data", member["headers"])
     app_client.post(
@@ -112,7 +121,7 @@ def _resumable_complete(client, pid, uid, headers):
 def test_resumable_init_locked_returns_423(app_client, member, project, monkeypatch):
     monkeypatch.setattr(main_mod, "ADMIN_TOKEN", "tok")
     pid = project["id"]
-    locker_h = _second_member(app_client, "tok")
+    locker_h = _second_member(app_client, "tok", pid, member["headers"])
 
     _upload(app_client, pid, "Assets/x.bin", b"v1", member["headers"])
     app_client.post(
