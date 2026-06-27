@@ -197,6 +197,24 @@ export interface ServerSettings {
   max_file_size_mb: string
 }
 
+/** Aggregated, read-only project metrics from GET /projects/{id}/stats. */
+export interface ProjectStats {
+  storage: {
+    file_count: number
+    files_bytes: number      // sum of current files' sizes
+    version_count: number
+    version_bytes: number    // sum of every version blob (full history on disk)
+    total_bytes: number      // files_bytes + version_bytes
+  }
+  locks: {
+    total: number
+    by_member: Array<{ member_id: number; member_name: string; avatar_color: string; count: number }>
+  }
+  contributors: Array<{ member_id: number; member_name: string; avatar_color: string; actions: number }>
+  file_types: Array<{ ext: string; count: number; bytes: number }>
+  heatmap: Array<{ day: string; count: number }>  // {YYYY-MM-DD, count} for days with activity
+}
+
 /** Outcome of a client-orchestrated push or pull (per-file upload/download loop). */
 export interface SyncResult {
   done: number

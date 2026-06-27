@@ -1375,6 +1375,15 @@ async def list_activity(
     return storage.list_activity(project_id, limit, offset)
 
 
+@app.get("/projects/{project_id}/stats")
+async def project_stats(project_id: int, member: dict = Depends(get_current_member)):
+    """Read-only aggregated metrics for the stats overlay (storage, locks,
+    contributors, file types, activity heatmap). Visible to any member."""
+    if not storage.get_project(project_id):
+        raise HTTPException(404, "Project not found")
+    return storage.project_stats(project_id)
+
+
 # ── WebSocket ────────────────────────────────────────────────────────
 
 @app.websocket("/projects/{project_id}/ws")

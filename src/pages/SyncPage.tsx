@@ -19,6 +19,7 @@ import { ConflictDialog } from '../components/CrowSync/ConflictDialog'
 import { LockDialog, type LockDialogData } from '../components/CrowSync/LockDialog'
 import { UnlockGroupDialog } from '../components/CrowSync/UnlockGroupDialog'
 import { InitProjectDialog } from '../components/CrowSync/InitProjectDialog'
+import { StatsDialog } from '../components/CrowSync/StatsDialog'
 import { ToastContainer } from '../components/CrowSync/ToastContainer'
 
 interface SyncPageProps {
@@ -61,6 +62,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
   const [pushing, setPushing] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [showInit, setShowInit] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [showProjects, setShowProjects] = useState(true)
   const [showActivity, setShowActivity] = useState(true)
   const { toasts, addToast, removeToast } = useToast()
@@ -404,6 +406,16 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
           <span className="text-[13px] text-text-muted font-mono truncate">{memberName}</span>
 
+          {selectedId && (
+            <button
+              onClick={() => setShowStats(true)}
+              className="btn-riso btn-riso-secondary text-[12px] font-mono font-bold tracking-wider px-2 h-7 rounded shrink-0"
+              title="Project stats"
+            >
+              STATS
+            </button>
+          )}
+
           <button
             onClick={onSettings}
             className="btn-riso btn-riso-secondary text-[12px] font-mono font-bold tracking-wider w-9 h-7 px-0 rounded shrink-0"
@@ -541,6 +553,11 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
           onClose={() => setShowInit(false)}
           onComplete={() => { refresh(); compare() }}
         />
+      )}
+
+      {/* Project stats overlay */}
+      {showStats && selectedId && (
+        <StatsDialog client={client} projectId={selectedId} onClose={() => setShowStats(false)} />
       )}
 
       {/* Toasts */}
