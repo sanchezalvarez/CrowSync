@@ -195,22 +195,38 @@ def delete_project(project_id: int) -> bool:
 
 # ── Project members ──────────────────────────────────────────────────
 
-def add_project_member(project_id: int, member_id: int, role: str = "member") -> dict:
-    """Add a member to a project (or update their role if already present)."""
-    with _write_lock:
-        conn = _get_conn()
+def _active_admins_excluding(conn: sqlite3.Connection, project_id: int, member_id: int) -> int:
+    """Count a project's admins that are active members, excluding `member_id`.
+    Used by the last-admin guard so a project is never left with no usable admin
+    (deactivated members keep their row but must not count — review #2)."""
+    return conn.execute(
+        """SELECT COUNT(*) AS n FROM project_members pm
+           JOIN members m ON pm.member_id = m.id
+           WHERE pm.project_id = ? AND pm.role = 'admin'
+                 AND m.is_active = 1 AND pm.member_id != ?""",
+        (project_id, member_id),
+    ).fetchone()["n"]
+
+
+def set_project_member_role(project_id: int, member_id: int, role: str) -> str:
+    """Atomically add a member to a project or change their role (upsert). Returns
+    'ok', or 'last_admin' (unchanged) if this would demote the project's last active
+    admin. The whole check-then-write runs in one transaction so concurrent demotions
+    can't both slip through (review #1/#4)."""
+    with with_transaction() as conn:
+        existing = conn.execute(
+            "SELECT role FROM project_members WHERE project_id = ? AND member_id = ?",
+            (project_id, member_id),
+        ).fetchone()
+        demoting_admin = role != "admin" and existing is not None and existing["role"] == "admin"
+        if demoting_admin and _active_admins_excluding(conn, project_id, member_id) == 0:
+            return "last_admin"
         conn.execute(
             """INSERT INTO project_members (project_id, member_id, role) VALUES (?, ?, ?)
                ON CONFLICT(project_id, member_id) DO UPDATE SET role = excluded.role""",
             (project_id, member_id, role),
         )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM project_members WHERE project_id = ? AND member_id = ?",
-            (project_id, member_id),
-        ).fetchone()
-        conn.close()
-        return _row_to_dict(row)
+        return "ok"
 
 
 def get_project_role(project_id: int, member_id: int) -> str | None:
@@ -238,27 +254,23 @@ def list_project_members(project_id: int) -> list[dict]:
     return _rows_to_list(rows)
 
 
-def remove_project_member(project_id: int, member_id: int) -> bool:
-    with _write_lock:
-        conn = _get_conn()
-        cur = conn.execute(
+def remove_project_member(project_id: int, member_id: int) -> str:
+    """Atomically remove a member from a project. Returns 'ok', 'not_found', or
+    'last_admin' (unchanged) if removing the project's last active admin."""
+    with with_transaction() as conn:
+        existing = conn.execute(
+            "SELECT role FROM project_members WHERE project_id = ? AND member_id = ?",
+            (project_id, member_id),
+        ).fetchone()
+        if existing is None:
+            return "not_found"
+        if existing["role"] == "admin" and _active_admins_excluding(conn, project_id, member_id) == 0:
+            return "last_admin"
+        conn.execute(
             "DELETE FROM project_members WHERE project_id = ? AND member_id = ?",
             (project_id, member_id),
         )
-        conn.commit()
-        removed = cur.rowcount > 0
-        conn.close()
-        return removed
-
-
-def count_project_admins(project_id: int) -> int:
-    conn = _get_conn()
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM project_members WHERE project_id = ? AND role = 'admin'",
-        (project_id,),
-    ).fetchone()
-    conn.close()
-    return row["n"]
+        return "ok"
 
 
 def list_projects_for_member(member_id: int) -> list[dict]:

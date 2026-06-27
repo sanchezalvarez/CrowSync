@@ -131,6 +131,36 @@ def test_cannot_remove_last_admin(app_client, member, project):
     assert r.status_code == 409
 
 
+def test_post_cannot_demote_last_admin(app_client, member, project):
+    # Re-POSTing the sole admin with role 'member' must not bypass the guard (review #1).
+    pid = project["id"]
+    r = app_client.post(
+        f"/projects/{pid}/members",
+        json={"member_id": member["id"], "role": "member"}, headers=member["headers"],
+    )
+    assert r.status_code == 409
+    assert storage.get_project_role(pid, member["id"]) == "admin"  # unchanged
+
+
+def test_deactivated_admin_does_not_count_toward_last_admin(app_client, member, project, monkeypatch):
+    # An admin whose account was deactivated must not keep the project's last active
+    # admin from being protected (review #2).
+    monkeypatch.setattr(main_mod, "ADMIN_TOKEN", "tok")
+    bob = _register(app_client, "bob", "tok")
+    pid = project["id"]
+    # Bob is a second admin, then his account is deactivated (DELETE /members).
+    app_client.post(f"/projects/{pid}/members", json={"member_id": bob["id"], "role": "admin"},
+                    headers=member["headers"])
+    r = app_client.delete(f"/members/{bob['id']}", headers={**member["headers"], "X-Admin-Token": "tok"})
+    assert r.status_code == 200
+    # The creator is now the sole *active* admin — demoting them must be blocked.
+    r = app_client.put(
+        f"/projects/{pid}/members/{member['id']}",
+        json={"role": "member"}, headers=member["headers"],
+    )
+    assert r.status_code == 409
+
+
 def test_remove_member(app_client, member, project, monkeypatch):
     monkeypatch.setattr(main_mod, "ADMIN_TOKEN", "tok")
     bob = _register(app_client, "bob", "tok")
@@ -171,9 +201,12 @@ def test_super_admin_sees_all_and_bypasses_membership(app_client, member, projec
     pid = project["id"]
     h = {**bob["headers"], "X-Admin-Token": "tok"}
 
-    # Sees every project despite no membership.
+    # Sees every project despite no membership, each tagged role='admin' so the
+    # web UI exposes admin controls (review #3).
     r = app_client.get("/projects", headers=h)
-    assert any(p["id"] == pid for p in r.json())
+    seen = [p for p in r.json() if p["id"] == pid]
+    assert len(seen) == 1
+    assert seen[0]["role"] == "admin"
     # Passes the member gate on a project endpoint.
     r = app_client.get(f"/projects/{pid}/stats", headers=h)
     assert r.status_code == 200

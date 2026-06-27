@@ -317,8 +317,10 @@ async def list_projects(
     x_admin_token: str = Header(""),
 ):
     # Members see only the projects they belong to; the env super-admin sees all.
+    # Tag the super-admin's projects with role='admin' so the web UI exposes the
+    # admin controls their token actually grants (review #3).
     if _is_super_admin(x_admin_token):
-        return storage.list_projects()
+        return [{**p, "role": "admin"} for p in storage.list_projects()]
     return storage.list_projects_for_member(member["id"])
 
 
@@ -565,7 +567,10 @@ async def add_project_member(
     target = storage.get_member(body.member_id)
     if not target or not target.get("is_active", 1):
         raise HTTPException(404, "Member not found")
-    storage.add_project_member(project_id, body.member_id, role)
+    # Atomic upsert + last-admin guard (the guard also covers a POST that would
+    # demote the project's sole admin via the role field — review #1).
+    if storage.set_project_member_role(project_id, body.member_id, role) == "last_admin":
+        raise HTTPException(409, "Project must keep at least one admin")
     return {"ok": True, "members": storage.list_project_members(project_id)}
 
 
@@ -580,11 +585,8 @@ async def update_project_member_role(
     role = _validate_role(body.role)
     if storage.get_project_role(project_id, member_id) is None:
         raise HTTPException(404, "Member is not in this project")
-    # Keep at least one admin: block demoting the last admin.
-    if role == "member" and storage.get_project_role(project_id, member_id) == "admin" \
-            and storage.count_project_admins(project_id) <= 1:
+    if storage.set_project_member_role(project_id, member_id, role) == "last_admin":
         raise HTTPException(409, "Project must keep at least one admin")
-    storage.add_project_member(project_id, member_id, role)
     return {"ok": True, "members": storage.list_project_members(project_id)}
 
 
@@ -595,12 +597,11 @@ async def remove_project_member(
     member: dict = Depends(get_current_member),
     _admin: None = Depends(require_project_admin),
 ):
-    role = storage.get_project_role(project_id, member_id)
-    if role is None:
+    status = storage.remove_project_member(project_id, member_id)
+    if status == "not_found":
         raise HTTPException(404, "Member is not in this project")
-    if role == "admin" and storage.count_project_admins(project_id) <= 1:
+    if status == "last_admin":
         raise HTTPException(409, "Project must keep at least one admin")
-    storage.remove_project_member(project_id, member_id)
     return {"ok": True, "members": storage.list_project_members(project_id)}
 
 
@@ -1507,9 +1508,8 @@ async def list_activity(
 @app.get("/projects/{project_id}/stats", dependencies=[Depends(require_project_member)])
 async def project_stats(project_id: int, member: dict = Depends(get_current_member)):
     """Read-only aggregated metrics for the stats overlay (storage, locks,
-    contributors, file types, activity heatmap). Visible to any member."""
-    if not storage.get_project(project_id):
-        raise HTTPException(404, "Project not found")
+    contributors, file types, activity heatmap). Visible to any member.
+    Existence is already enforced by require_project_member (404)."""
     return storage.project_stats(project_id)
 
 
