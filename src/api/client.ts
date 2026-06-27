@@ -1,4 +1,4 @@
-import type { Project, Member, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError, PullSession, PullRevertResult, ProjectStats } from '../types'
+import type { Project, Member, ProjectMember, FileEntry, Version, Activity, CompareManifestEntry, CompareTombstone, CompareResult, ServerSettings, LockResult, LockSuggestionResult, ApiError, PullSession, PullRevertResult, ProjectStats } from '../types'
 
 export class CrowSyncClient {
   private baseUrl: string
@@ -84,6 +84,31 @@ export class CrowSyncClient {
 
   async deleteProject(projectId: number): Promise<{ ok: boolean }> {
     return this.request(`/projects/${projectId}`, { method: 'DELETE' })
+  }
+
+  // Project membership (per-project roles: admin / member)
+  async listProjectMembers(projectId: number): Promise<ProjectMember[]> {
+    return this.request(`/projects/${projectId}/members`)
+  }
+
+  async addProjectMember(projectId: number, memberId: number, role: 'admin' | 'member' = 'member'): Promise<{ ok: boolean; members: ProjectMember[] }> {
+    return this.request(`/projects/${projectId}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ member_id: memberId, role }),
+    })
+  }
+
+  async updateProjectMemberRole(projectId: number, memberId: number, role: 'admin' | 'member'): Promise<{ ok: boolean; members: ProjectMember[] }> {
+    return this.request(`/projects/${projectId}/members/${memberId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    })
+  }
+
+  async removeProjectMember(projectId: number, memberId: number): Promise<{ ok: boolean; members: ProjectMember[] }> {
+    return this.request(`/projects/${projectId}/members/${memberId}`, { method: 'DELETE' })
   }
 
   // Members

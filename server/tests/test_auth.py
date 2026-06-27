@@ -110,12 +110,29 @@ def test_recovery_reissues_key_and_invalidates_old(app_client, monkeypatch):
     assert r_new.status_code == 200
 
 
-# ── Destructive endpoints require strict admin token ──────────────────────────
+# ── Project deletion: project-admin (creator) or env super-admin ──────────────
 
-def test_delete_project_no_admin_token_returns_403(app_client, member, project):
+def test_delete_project_by_creator_admin_succeeds(app_client, member, project):
+    # The project's creator is its admin and may delete it (no env token needed).
     r = app_client.delete(
         f"/projects/{project['id']}",
         headers=member["headers"],
+    )
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_delete_project_by_non_member_returns_403(app_client, member, project, monkeypatch):
+    # A registered member who isn't part of the project cannot delete it.
+    monkeypatch.setattr(main_mod, "ADMIN_TOKEN", "admin")
+    r = app_client.post(
+        "/members", json={"name": "outsider"}, headers={"X-Admin-Token": "admin"},
+    )
+    assert r.status_code == 201, r.text
+    outsider = r.json()
+    r = app_client.delete(
+        f"/projects/{project['id']}",
+        headers={"X-Member-Name": outsider["name"], "X-Api-Key": outsider["api_key"]},
     )
     assert r.status_code == 403
 

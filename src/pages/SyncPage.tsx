@@ -20,6 +20,7 @@ import { LockDialog, type LockDialogData } from '../components/CrowSync/LockDial
 import { UnlockGroupDialog } from '../components/CrowSync/UnlockGroupDialog'
 import { InitProjectDialog } from '../components/CrowSync/InitProjectDialog'
 import { StatsDialog } from '../components/CrowSync/StatsDialog'
+import { ProjectMembersDialog } from '../components/CrowSync/ProjectMembersDialog'
 import { ToastContainer } from '../components/CrowSync/ToastContainer'
 
 interface SyncPageProps {
@@ -63,6 +64,7 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
   const [pulling, setPulling] = useState(false)
   const [showInit, setShowInit] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [showMembers, setShowMembers] = useState(false)
   const [showProjects, setShowProjects] = useState(true)
   const [showActivity, setShowActivity] = useState(true)
   const { toasts, addToast, removeToast } = useToast()
@@ -408,6 +410,16 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
 
           {selectedId && (
             <button
+              onClick={() => setShowMembers(true)}
+              className="btn-riso btn-riso-secondary text-[12px] font-mono font-bold tracking-wider px-2 h-7 rounded shrink-0"
+              title="Project members"
+            >
+              MEMBERS
+            </button>
+          )}
+
+          {selectedId && (
+            <button
               onClick={() => setShowStats(true)}
               className="btn-riso btn-riso-secondary text-[12px] font-mono font-bold tracking-wider px-2 h-7 rounded shrink-0"
               title="Project stats"
@@ -558,6 +570,16 @@ export function SyncPage({ client, serverUrl, memberName, apiKey, currentMemberI
       {/* Project stats overlay */}
       {showStats && selectedId && (
         <StatsDialog client={client} projectId={selectedId} onClose={() => setShowStats(false)} />
+      )}
+
+      {/* Project members overlay */}
+      {showMembers && selectedId && projects.find(p => p.id === selectedId) && (
+        <ProjectMembersDialog
+          client={client}
+          project={projects.find(p => p.id === selectedId)!}
+          currentMemberId={currentMemberId}
+          onClose={() => setShowMembers(false)}
+        />
       )}
 
       {/* Toasts */}

@@ -71,8 +71,11 @@ export function ProjectPanel({ projects, selectedId, onSelect, onCreate, onDelet
             onClick={() => onSelect(p.id)}
             onContextMenu={e => {
               e.preventDefault()
+              // Only project admins may delete; the server enforces this too (403).
+              if (p.role !== 'admin') return
               if (confirm(`Delete project "${p.name}"?`)) onDelete(p.id)
             }}
+            title={p.role === 'admin' ? 'Right-click to delete' : undefined}
             className={`px-3 py-2 cursor-pointer transition-all group ${
               selectedId === p.id
                 ? 'bg-surface-2 border-l-2'
@@ -95,8 +98,8 @@ export function ProjectPanel({ projects, selectedId, onSelect, onCreate, onDelet
           </div>
         ))}
         {projects.length === 0 && (
-          <div className="px-3 py-10 text-center text-text-ghost text-xs">
-            No projects yet
+          <div className="px-3 py-10 text-center text-text-ghost text-xs leading-relaxed">
+            No projects yet.<br />Create one (you'll be its admin) or ask an admin to add you.
           </div>
         )}
       </div>

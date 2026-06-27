@@ -61,6 +61,24 @@ def init_db(db_path: str) -> None:
     if "lock_group_id" not in fcols:
         conn.execute("ALTER TABLE files ADD COLUMN lock_group_id TEXT DEFAULT NULL")
     conn.commit()
+    # Migrate: backfill per-project membership for pre-existing projects so nobody
+    # loses access when upgrading. Runs once (only while the table is empty): every
+    # active member becomes a 'member' of every project, the lowest-id (bootstrap)
+    # member becomes 'admin'. A super-admin can adjust roles afterwards.
+    have_pm = conn.execute("SELECT COUNT(*) AS n FROM project_members").fetchone()["n"]
+    existing_projects = conn.execute("SELECT id FROM projects").fetchall()
+    if have_pm == 0 and existing_projects:
+        members = conn.execute(
+            "SELECT id FROM members WHERE is_active = 1 ORDER BY id"
+        ).fetchall()
+        admin_id = members[0]["id"] if members else None
+        for p in existing_projects:
+            for m in members:
+                conn.execute(
+                    "INSERT OR IGNORE INTO project_members (project_id, member_id, role) VALUES (?, ?, ?)",
+                    (p["id"], m["id"], "admin" if m["id"] == admin_id else "member"),
+                )
+        conn.commit()
     conn.close()
 
 
@@ -107,7 +125,10 @@ def _rows_to_list(rows: list[sqlite3.Row]) -> list[dict]:
 
 # ── Projects ─────────────────────────────────────────────────────────
 
-def create_project(name: str, description: str, color: str, root_path: str) -> dict:
+def create_project(name: str, description: str, color: str, root_path: str,
+                   creator_id: int | None = None) -> dict:
+    """Create a project. If `creator_id` is given, that member is added as the
+    project's first `admin` in the same transaction (per-project membership)."""
     with _write_lock:
         conn = _get_conn()
         cur = conn.execute(
@@ -115,6 +136,11 @@ def create_project(name: str, description: str, color: str, root_path: str) -> d
             (name, description, color, root_path),
         )
         project_id = cur.lastrowid
+        if creator_id is not None:
+            conn.execute(
+                "INSERT INTO project_members (project_id, member_id, role) VALUES (?, ?, 'admin')",
+                (project_id, creator_id),
+            )
         conn.commit()
         row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         conn.close()
@@ -165,6 +191,89 @@ def delete_project(project_id: int) -> bool:
         deleted = cur.rowcount > 0
         conn.close()
         return deleted
+
+
+# ── Project members ──────────────────────────────────────────────────
+
+def add_project_member(project_id: int, member_id: int, role: str = "member") -> dict:
+    """Add a member to a project (or update their role if already present)."""
+    with _write_lock:
+        conn = _get_conn()
+        conn.execute(
+            """INSERT INTO project_members (project_id, member_id, role) VALUES (?, ?, ?)
+               ON CONFLICT(project_id, member_id) DO UPDATE SET role = excluded.role""",
+            (project_id, member_id, role),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM project_members WHERE project_id = ? AND member_id = ?",
+            (project_id, member_id),
+        ).fetchone()
+        conn.close()
+        return _row_to_dict(row)
+
+
+def get_project_role(project_id: int, member_id: int) -> str | None:
+    """The member's role in the project, or None if they're not a member."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT role FROM project_members WHERE project_id = ? AND member_id = ?",
+        (project_id, member_id),
+    ).fetchone()
+    conn.close()
+    return row["role"] if row else None
+
+
+def list_project_members(project_id: int) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT m.id AS member_id, m.name, m.email, m.avatar_color,
+               pm.role, pm.created_at
+        FROM project_members pm
+        JOIN members m ON pm.member_id = m.id
+        WHERE pm.project_id = ? AND m.is_active = 1
+        ORDER BY pm.role, m.name
+    """, (project_id,)).fetchall()
+    conn.close()
+    return _rows_to_list(rows)
+
+
+def remove_project_member(project_id: int, member_id: int) -> bool:
+    with _write_lock:
+        conn = _get_conn()
+        cur = conn.execute(
+            "DELETE FROM project_members WHERE project_id = ? AND member_id = ?",
+            (project_id, member_id),
+        )
+        conn.commit()
+        removed = cur.rowcount > 0
+        conn.close()
+        return removed
+
+
+def count_project_admins(project_id: int) -> int:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM project_members WHERE project_id = ? AND role = 'admin'",
+        (project_id,),
+    ).fetchone()
+    conn.close()
+    return row["n"]
+
+
+def list_projects_for_member(member_id: int) -> list[dict]:
+    """Projects the member belongs to, with file_count and their own `role`."""
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT p.*, pm.role, COUNT(f.id) AS file_count
+        FROM projects p
+        JOIN project_members pm ON pm.project_id = p.id AND pm.member_id = ?
+        LEFT JOIN files f ON f.project_id = p.id
+        GROUP BY p.id
+        ORDER BY p.created_at DESC
+    """, (member_id,)).fetchall()
+    conn.close()
+    return _rows_to_list(rows)
 
 
 # ── Members ──────────────────────────────────────────────────────────
